@@ -1,32 +1,35 @@
-//
-//  RollApp.swift
-//  Roll
-//
-//  Created by Catalin Sandru on 19.03.2026.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct RollApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
+    @AppStorage("onboardingComplete") var onboardingComplete = false
+    @StateObject private var permissionService = PermissionService()
+
+    let modelContainer: ModelContainer
+
+    init() {
+        let schema = Schema([Album.self, MediaItem.self])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            self.modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            fatalError("Could not initialize ModelContainer: \(error)")
         }
-    }()
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if onboardingComplete {
+                ContentView()
+                    .environmentObject(permissionService)
+                    .modelContainer(modelContainer)
+            } else {
+                OnboardingFlow(onboardingComplete: $onboardingComplete)
+                    .environmentObject(permissionService)
+                    .modelContainer(modelContainer)
+            }
         }
-        .modelContainer(sharedModelContainer)
     }
 }

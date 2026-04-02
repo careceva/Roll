@@ -8,6 +8,7 @@ final class Album {
     var createdAt: Date
     var sortOrder: Int
     var coverPhotoIdentifier: String?
+    var photoLibraryIdentifier: String?
 
     @Relationship(deleteRule: .cascade, inverse: \MediaItem.album) var mediaItems: [MediaItem] = []
 
@@ -16,12 +17,14 @@ final class Album {
         name: String,
         createdAt: Date = Date(),
         sortOrder: Int = 0,
-        coverPhotoIdentifier: String? = nil
+        coverPhotoIdentifier: String? = nil,
+        photoLibraryIdentifier: String? = nil
     ) {
         self.id = id
         self.name = name
         self.createdAt = createdAt
         self.sortOrder = sortOrder
         self.coverPhotoIdentifier = coverPhotoIdentifier
+        self.photoLibraryIdentifier = photoLibraryIdentifier
     }
 }

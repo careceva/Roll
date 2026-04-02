@@ -5,6 +5,7 @@ struct MediaThumbnail: View {
     let asset: PHAsset
     @State private var thumbnail: UIImage?
     @State private var isLoading = true
+    private let thumbnailSize = CGSize(width: 200, height: 200)
 
     var body: some View {
         ZStack {
@@ -14,6 +15,7 @@ struct MediaThumbnail: View {
                 Image(uiImage: thumbnail)
                     .resizable()
                     .scaledToFill()
+                    .drawingGroup() // Improves compositing performance
             } else if isLoading {
                 ProgressView()
                     .tint(.gray)
@@ -43,10 +45,15 @@ struct MediaThumbnail: View {
         .onAppear {
             loadThumbnail()
         }
+        .onDisappear {
+            // Cancel in-flight requests when view disappears
+            PhotoLibraryService.shared.cancelThumbnailRequest(for: asset, size: thumbnailSize)
+        }
     }
 
+    @MainActor
     private func loadThumbnail() {
-        PhotoLibraryService.shared.getThumbnail(for: asset) { image in
+        PhotoLibraryService.shared.getThumbnail(for: asset, size: thumbnailSize) { image in
             DispatchQueue.main.async {
                 self.thumbnail = image
                 self.isLoading = false

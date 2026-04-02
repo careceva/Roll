@@ -8,25 +8,37 @@ struct OnboardingFlow: View {
 
     var body: some View {
         ZStack {
+            // ── Permanent dark base — prevents any white flash during transitions ──
+            LinearGradient(
+                stops: [
+                    .init(color: Color(red: 0.04, green: 0.04, blue: 0.14), location: 0),
+                    .init(color: Color(red: 0.07, green: 0.04, blue: 0.18), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            // ── Step content ──────────────────────────────────────────────────────
             Group {
                 switch viewModel.currentStep {
                 case .welcome:
                     WelcomeView(onContinue: {
-                        withAnimation(.easeInOut) {
+                        withAnimation(.spring(duration: 0.45, bounce: 0.1)) {
                             viewModel.moveToNext()
                         }
                     })
 
                 case .permissions:
                     PermissionView(onContinue: {
-                        withAnimation(.easeInOut) {
+                        withAnimation(.spring(duration: 0.45, bounce: 0.1)) {
                             viewModel.moveToNext()
                         }
                     })
 
                 case .createAlbum:
                     CreateFirstAlbumView(onComplete: {
-                        withAnimation(.easeInOut) {
+                        withAnimation(.spring(duration: 0.45, bounce: 0.1)) {
                             viewModel.moveToNext()
                         }
                     })
@@ -38,7 +50,7 @@ struct OnboardingFlow: View {
                         }
                 }
             }
-            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
     }
 }

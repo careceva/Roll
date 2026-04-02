@@ -4,8 +4,7 @@ import Photos
 import UIKit
 
 // Camera service manages AVCaptureSession on a dedicated queue.
-// We opt out of default MainActor isolation since capture work must
-// happen off the main thread. @Published updates are dispatched to main.
+// Optimized for fastest possible launch, shutter, and rapid-fire capture.
 @preconcurrency @MainActor
 class CameraService: NSObject, ObservableObject {
     @Published var isCameraReady = false
@@ -21,10 +20,20 @@ class CameraService: NSObject, ObservableObject {
     private var photoOutput: AVCapturePhotoOutput?
     private var videoOutput: AVCaptureMovieFileOutput?
     private var currentVideoFileURL: URL?
-    private nonisolated(unsafe) var photoCompletionHandler: ((UIImage?) -> Void)?
+
+    // Use an array to support overlapping captures (rapid fire)
+    private nonisolated(unsafe) var pendingPhotoHandlers: [Int64: (UIImage?) -> Void] = [:]
+    private nonisolated let handlersLock = NSLock()
+
     private nonisolated(unsafe) var videoCompletionHandler: ((URL?) -> Void)?
 
     private nonisolated let sessionQueue = DispatchQueue(label: "com.roll.camera.session", qos: .userInitiated)
+
+    // KVO observation for session running state
+    private nonisolated(unsafe) var runningObservation: NSKeyValueObservation?
+
+    /// Callback fired once on main thread when session first starts running.
+    var onSessionRunning: (() -> Void)?
 
     override init() {
         super.init()
@@ -37,11 +46,25 @@ class CameraService: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Session Configuration (optimized for speed)
+
     private nonisolated func configureSession() {
+        // KVO: observe isRunning so CameraView gets notified instantly (no polling)
+        runningObservation = captureSession.observe(\.isRunning, options: [.new]) { [weak self] session, change in
+            if change.newValue == true {
+                DispatchQueue.main.async {
+                    self?.onSessionRunning?()
+                    self?.onSessionRunning = nil // fire once
+                }
+                self?.runningObservation?.invalidate()
+                self?.runningObservation = nil
+            }
+        }
+
         captureSession.beginConfiguration()
         captureSession.sessionPreset = .photo
 
-        // Video input
+        // --- VIDEO INPUT ONLY (audio deferred for fast launch) ---
         guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
               let videoInput = try? AVCaptureDeviceInput(device: videoDevice) else {
             captureSession.commitConfiguration()
@@ -52,18 +75,21 @@ class CameraService: NSObject, ObservableObject {
             captureSession.addInput(videoInput)
         }
 
-        // Audio input
-        if let audioDevice = AVCaptureDevice.default(for: .audio),
-           let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
-           captureSession.canAddInput(audioInput) {
-            captureSession.addInput(audioInput)
-        }
-
-        // Photo output
+        // Photo output with speed priority + responsive capture
         let photoOut = AVCapturePhotoOutput()
         if captureSession.canAddOutput(photoOut) {
             captureSession.addOutput(photoOut)
             photoOut.maxPhotoQualityPrioritization = .speed
+
+            // iOS 17+: Enable responsive capture for near-zero shutter lag
+            if #available(iOS 17.0, *) {
+                if photoOut.isResponsiveCaptureSupported {
+                    photoOut.isResponsiveCaptureEnabled = true
+                }
+                if photoOut.isFastCapturePrioritizationSupported {
+                    photoOut.isFastCapturePrioritizationEnabled = true
+                }
+            }
         }
 
         // Video file output
@@ -73,6 +99,8 @@ class CameraService: NSObject, ObservableObject {
         }
 
         captureSession.commitConfiguration()
+
+        // START session immediately (video-only = fast)
         captureSession.startRunning()
 
         DispatchQueue.main.async {
@@ -80,7 +108,28 @@ class CameraService: NSObject, ObservableObject {
             self.videoOutput = videoOut
             self.isCameraReady = true
         }
+
+        // --- DEFERRED: add audio input AFTER session is running ---
+        // Audio device init is ~200-400ms and would block camera preview.
+        self.addAudioInputDeferred()
     }
+
+    /// Adds audio input on the session queue without stopping the running session.
+    private nonisolated func addAudioInputDeferred() {
+        // Small yield to let the session fully start before reconfiguring
+        sessionQueue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
+            self.captureSession.beginConfiguration()
+            if let audioDevice = AVCaptureDevice.default(for: .audio),
+               let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
+               self.captureSession.canAddInput(audioInput) {
+                self.captureSession.addInput(audioInput)
+            }
+            self.captureSession.commitConfiguration()
+        }
+    }
+
+    // MARK: - Session Lifecycle
 
     func startSession() {
         sessionQueue.async { [captureSession] in
@@ -98,29 +147,39 @@ class CameraService: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Photo Capture (optimized for <100ms shutter + rapid fire)
+
     func capturePhoto(completion: @escaping (UIImage?) -> Void) {
         guard let photoOutput else { return }
 
-        photoCompletionHandler = completion
         let flash = flashMode
         let session = captureSession
 
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            let settings = AVCapturePhotoSettings()
-            settings.photoQualityPrioritization = .speed
+        // Build settings on the calling thread (no queue hop needed)
+        let settings = AVCapturePhotoSettings()
+        settings.photoQualityPrioritization = .speed
 
-            // Only set flash if the current device supports it
-            if let device = (session.inputs.first(where: {
-                ($0 as? AVCaptureDeviceInput)?.device.hasMediaType(.video) == true
-            }) as? AVCaptureDeviceInput)?.device,
-               device.hasFlash {
-                settings.flashMode = flash
-            }
+        // Check flash support
+        if let device = (session.inputs.first(where: {
+            ($0 as? AVCaptureDeviceInput)?.device.hasMediaType(.video) == true
+        }) as? AVCaptureDeviceInput)?.device,
+           device.hasFlash {
+            settings.flashMode = flash
+        }
 
+        // Store handler keyed by uniqueID for overlapping captures
+        let uniqueID = settings.uniqueID
+        handlersLock.lock()
+        pendingPhotoHandlers[uniqueID] = completion
+        handlersLock.unlock()
+
+        // Dispatch only the actual capture call to session queue
+        sessionQueue.async {
             photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
+
+    // MARK: - Video Recording
 
     func startVideoRecording() {
         guard let videoOutput else { return }
@@ -148,6 +207,8 @@ class CameraService: NSObject, ObservableObject {
             videoOutput.stopRecording()
         }
     }
+
+    // MARK: - Camera Controls
 
     func switchCamera() {
         let newPosition: AVCaptureDevice.Position = cameraPosition == .back ? .front : .back
@@ -239,6 +300,7 @@ class CameraService: NSObject, ObservableObject {
     }
 
     deinit {
+        runningObservation?.invalidate()
         if captureSession.isRunning {
             captureSession.stopRunning()
         }
@@ -252,27 +314,27 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
+        let uniqueID = photo.resolvedSettings.uniqueID
+
+        // Retrieve the handler for this specific capture
+        handlersLock.lock()
+        let handler = pendingPhotoHandlers.removeValue(forKey: uniqueID)
+        handlersLock.unlock()
+
         if let error {
             print("Photo capture error: \(error)")
-            DispatchQueue.main.async {
-                self.photoCompletionHandler?(nil)
-                self.photoCompletionHandler = nil
-            }
+            DispatchQueue.main.async { handler?(nil) }
             return
         }
 
-        guard let imageData = photo.fileDataRepresentation() else {
-            DispatchQueue.main.async {
-                self.photoCompletionHandler?(nil)
-                self.photoCompletionHandler = nil
+        // Process image on background queue to keep session queue free for next capture
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let imageData = photo.fileDataRepresentation() else {
+                DispatchQueue.main.async { handler?(nil) }
+                return
             }
-            return
-        }
-
-        let image = UIImage(data: imageData)
-        DispatchQueue.main.async {
-            self.photoCompletionHandler?(image)
-            self.photoCompletionHandler = nil
+            let image = UIImage(data: imageData)
+            DispatchQueue.main.async { handler?(image) }
         }
     }
 }

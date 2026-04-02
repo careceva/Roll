@@ -8,18 +8,18 @@ struct CameraView: View {
     @State private var showGallery = false
     @State private var focusPoint: CGPoint?
     @State private var pinchScale: CGFloat = 1.0
+    @State private var cameraReady = false
 
     var body: some View {
         ZStack {
-            // Camera preview — always show, session starts async
+            // ── Layer 1: Camera preview (full bleed) ─────────────────────
             GeometryReader { geo in
                 CameraPreviewView(session: cameraViewModel.cameraService.captureSession)
                     .ignoresSafeArea()
                     .gesture(
                         MagnificationGesture()
                             .onChanged { scale in
-                                let newZoom = pinchScale * scale
-                                cameraViewModel.cameraService.setZoom(newZoom)
+                                cameraViewModel.cameraService.setZoom(pinchScale * scale)
                             }
                             .onEnded { _ in
                                 pinchScale = cameraViewModel.cameraService.zoomLevel
@@ -29,105 +29,106 @@ struct CameraView: View {
                         SpatialTapGesture()
                             .onEnded { value in
                                 let location = value.location
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    focusPoint = location
-                                }
+                                withAnimation(.easeInOut(duration: 0.3)) { focusPoint = location }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                                    withAnimation {
-                                        focusPoint = nil
-                                    }
+                                    withAnimation { focusPoint = nil }
                                 }
-                                let normalizedPoint = CGPoint(
+                                cameraViewModel.cameraService.focus(at: CGPoint(
                                     x: location.x / geo.size.width,
                                     y: location.y / geo.size.height
-                                )
-                                cameraViewModel.cameraService.focus(at: normalizedPoint)
+                                ))
                             }
                     )
             }
             .ignoresSafeArea()
 
-            // Album selector at top + zoom indicator
+            // ── Layer 2: Controls (full screen, black bars top & bottom) ──
             if let albumVM = albumViewModel {
-                VStack {
-                    AlbumSelectorOverlay(albumViewModel: albumVM)
-                    Spacer()
-                    if cameraViewModel.cameraService.zoomLevel > 1.05 {
-                        Text(String(format: "%.1fx", cameraViewModel.cameraService.zoomLevel))
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.4))
-                            .cornerRadius(10)
-                            .padding(.bottom, 8)
-                    }
-                }
+                CameraControlsView(
+                    cameraService: cameraViewModel.cameraService,
+                    albumViewModel: albumVM,
+                    onPhotoTaken: {
+                        if let album = albumVM.selectedAlbum {
+                            cameraViewModel.capturePhoto(toAlbum: album, modelContext: modelContext)
+                        }
+                    },
+                    onVideoStart: {
+                        if let album = albumVM.selectedAlbum {
+                            cameraViewModel.startVideoRecording(toAlbum: album, modelContext: modelContext)
+                        }
+                    },
+                    onVideoEnd: {
+                        if let album = albumVM.selectedAlbum {
+                            cameraViewModel.stopVideoRecording(toAlbum: album, modelContext: modelContext) {}
+                        }
+                    },
+                    onCameraSwitch: { cameraViewModel.cameraService.switchCamera() },
+                    onGalleryTap: { showGallery = true },
+                    lastPhotoThumbnail: cameraViewModel.lastCapturedImage
+                )
+                .ignoresSafeArea()
             }
 
-            // Focus square
+            // ── Layer 3: Zoom indicator (floating above bottom bar) ───────
+            if cameraViewModel.cameraService.zoomLevel > 1.05 {
+                VStack {
+                    Spacer()
+                    Text(String(format: "%.1f×", cameraViewModel.cameraService.zoomLevel))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .glassEffect(in: Capsule())
+                        .padding(.bottom, 180)
+                        .transition(.opacity.combined(with: .scale(0.85)))
+                }
+                .allowsHitTesting(false)
+            }
+
+            // ── Layer 4: Focus square ─────────────────────────────────────
             if let focusPoint = focusPoint {
                 FocusSquare(position: focusPoint)
             }
 
-            // Photo saved flash
+            // ── Layer 5: Shutter blink ────────────────────────────────────
             if cameraViewModel.showPhotoSaved {
-                Color.white
+                Color.black
                     .ignoresSafeArea()
-                    .opacity(0.3)
                     .allowsHitTesting(false)
-                    .transition(.opacity)
+                    .transition(.opacity.animation(.easeIn(duration: 0.04)))
             }
 
-            // Bottom controls
-            if let albumVM = albumViewModel {
-                VStack {
-                    Spacer()
-
-                    CameraControlsView(
-                        cameraService: cameraViewModel.cameraService,
-                        onPhotoTaken: {
-                            if let album = albumVM.selectedAlbum {
-                                cameraViewModel.capturePhoto(toAlbum: album, modelContext: modelContext)
-                            }
-                        },
-                        onVideoStart: {
-                            if let album = albumVM.selectedAlbum {
-                                cameraViewModel.startVideoRecording(toAlbum: album, modelContext: modelContext)
-                            }
-                        },
-                        onVideoEnd: {
-                            if let album = albumVM.selectedAlbum {
-                                cameraViewModel.stopVideoRecording(toAlbum: album, modelContext: modelContext) {}
-                            }
-                        },
-                        onCameraSwitch: {
-                            cameraViewModel.cameraService.switchCamera()
-                        },
-                        onGalleryTap: {
-                            showGallery = true
-                        },
-                        lastPhotoThumbnail: cameraViewModel.lastCapturedImage
-                    )
-                }
+            // ── Layer 6: Launch animation ─────────────────────────────────
+            if !cameraReady {
+                Color.black
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
         .onAppear {
             if albumViewModel == nil {
                 albumViewModel = AlbumViewModel(modelContext: modelContext)
             }
+            cameraViewModel.cameraService.onSessionRunning = {
+                withAnimation(.easeIn(duration: 0.3)) { cameraReady = true }
+            }
             cameraViewModel.cameraService.setupCamera()
         }
         .onDisappear {
             cameraViewModel.cameraService.stopSession()
         }
-        .sheet(isPresented: $showGallery) {
-            GalleryView()
-                .environment(\.modelContext, modelContext)
+        .sheet(isPresented: $showGallery, onDismiss: {
+            albumViewModel?.fetchAlbums()
+        }) {
+            GalleryView().environment(\.modelContext, modelContext)
         }
         .statusBarHidden(true)
+        .toolbar(.hidden, for: .tabBar)
     }
 }
+
+// MARK: - Focus Square
 
 struct FocusSquare: View {
     let position: CGPoint
@@ -135,21 +136,18 @@ struct FocusSquare: View {
 
     var body: some View {
         ZStack {
-            Rectangle()
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .stroke(Color.yellow, lineWidth: 1.5)
                 .frame(width: 60, height: 60)
-
-            Rectangle()
-                .stroke(Color.yellow.opacity(0.5), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(Color.yellow.opacity(0.45), lineWidth: 1)
                 .frame(width: 60, height: 60)
-                .scaleEffect(isAnimating ? 1.2 : 1.0)
-                .opacity(isAnimating ? 0 : 1)
+                .scaleEffect(isAnimating ? 1.28 : 1.0)
+                .opacity(isAnimating ? 0 : 0.9)
         }
         .position(position)
         .onAppear {
-            withAnimation(.easeOut(duration: 0.3)) {
-                isAnimating = true
-            }
+            withAnimation(.easeOut(duration: 0.35)) { isAnimating = true }
         }
     }
 }

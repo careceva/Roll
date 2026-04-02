@@ -2,106 +2,136 @@ import SwiftUI
 
 struct AlbumCreationSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var albumName = ""
-    @State private var selectedColor = Color.blue
-    @State private var selectedEmoji = "📷"
+    @State private var albumName      = ""
+    @State private var selectedColor  = Color.blue
+    @State private var selectedEmoji  = "📷"
 
     let onCreateAlbum: (String, Color, String) -> Void
 
-    let emojis = ["📷", "📸", "🎬", "🎥", "🎞️", "📹", "🖼️", "🌅", "🌄", "🌠"]
-    let colors: [Color] = [.blue, .green, .red, .purple, .orange, .pink, .yellow, .cyan]
+    let emojis:  [String] = ["📷", "📸", "🎬", "🎥", "🎞️", "📹", "🖼️", "🌅", "🌄", "🌠"]
+    let colors:  [Color]  = [.blue, .green, .red, .purple, .orange, .pink, .yellow, .cyan]
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                VStack(spacing: 12) {
-                    Text("Album Name")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                VStack(spacing: 24) {
 
-                    TextField("Enter album name", text: $albumName)
-                        .textFieldStyle(.roundedBorder)
-                }
+                    // ── Preview badge ──────────────────────────────────────
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [selectedColor.opacity(0.8), selectedColor.opacity(0.5)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 72, height: 72)
+                        Text(selectedEmoji)
+                            .font(.system(size: 34))
+                    }
+                    .padding(.top, 8)
+                    .animation(.spring(duration: 0.3), value: selectedColor)
 
-                VStack(spacing: 12) {
-                    Text("Choose Color")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // ── Album name ─────────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Album Name", systemImage: "folder")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
 
-                    HStack(spacing: 12) {
-                        ForEach(colors, id: \.self) { color in
-                            Button(action: { selectedColor = color }) {
-                                Circle()
-                                    .fill(color)
-                                    .frame(width: 44, height: 44)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.white, lineWidth: selectedColor == color ? 3 : 0)
-                                    )
+                        TextField("Enter album name", text: $albumName)
+                            .font(.system(size: 16, weight: .medium))
+                            .textFieldStyle(.roundedBorder)
+                            .submitLabel(.done)
+                    }
+
+                    // ── Color picker ───────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Color", systemImage: "paintpalette")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            ForEach(colors, id: \.self) { color in
+                                Button(action: { selectedColor = color }) {
+                                    Circle()
+                                        .fill(color)
+                                        .frame(width: 34, height: 34)
+                                        .overlay(
+                                            Circle()
+                                                .strokeBorder(
+                                                    .white,
+                                                    lineWidth: selectedColor == color ? 2.5 : 0
+                                                )
+                                        )
+                                        .shadow(
+                                            color: color.opacity(selectedColor == color ? 0.5 : 0),
+                                            radius: 6
+                                        )
+                                        .animation(.spring(duration: 0.2), value: selectedColor == color)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            Spacer()
+                        }
+                    }
+
+                    // ── Emoji picker ───────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Icon", systemImage: "face.smiling")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 52))], spacing: 8) {
+                            ForEach(emojis, id: \.self) { emoji in
+                                Button(action: { selectedEmoji = emoji }) {
+                                    Text(emoji)
+                                        .font(.system(size: 24))
+                                        .frame(width: 52, height: 48)
+                                        .background(
+                                            selectedEmoji == emoji
+                                                ? selectedColor.opacity(0.2)
+                                                : Color(.systemGray6),
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .strokeBorder(
+                                                    selectedEmoji == emoji ? selectedColor : Color.clear,
+                                                    lineWidth: 2
+                                                )
+                                        )
+                                        .animation(.spring(duration: 0.2), value: selectedEmoji == emoji)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
-                        Spacer()
                     }
+
+                    Spacer(minLength: 12)
                 }
-
-                VStack(spacing: 12) {
-                    Text("Choose Emoji")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 8) {
-                        ForEach(emojis, id: \.self) { emoji in
-                            Button(action: { selectedEmoji = emoji }) {
-                                Text(emoji)
-                                    .font(.system(size: 24))
-                                    .frame(height: 44)
-                                    .frame(maxWidth: .infinity)
-                                    .background(selectedEmoji == emoji ? selectedColor.opacity(0.3) : Color.gray.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(selectedColor, lineWidth: selectedEmoji == emoji ? 2 : 0)
-                                    )
-                            }
-                        }
-                    }
+                .padding(20)
+            }
+            .navigationTitle("New Album")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
-
-                Spacer()
-
-                HStack(spacing: 12) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(12)
-                    .background(Color.gray.opacity(0.3))
-                    .cornerRadius(8)
-                    .foregroundColor(.primary)
-
-                    Button(action: {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
                         if !albumName.isEmpty {
                             onCreateAlbum(albumName, selectedColor, selectedEmoji)
                             dismiss()
                         }
-                    }) {
-                        Text("Create")
-                            .frame(maxWidth: .infinity)
-                            .padding(12)
-                            .background(albumName.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
-                            .cornerRadius(8)
-                            .foregroundColor(.white)
                     }
+                    .fontWeight(.semibold)
                     .disabled(albumName.isEmpty)
                 }
             }
-            .padding(20)
-            .navigationTitle("New Album")
-            .navigationBarTitleDisplayMode(.inline)
         }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
 

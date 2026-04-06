@@ -13,6 +13,8 @@ class CameraService: NSObject, ObservableObject {
     @Published var flashMode: AVCaptureDevice.FlashMode = .auto
     @Published var zoomLevel: CGFloat = 1.0
     @Published var focusPoint: CGPoint?
+    @Published var exposureBias: Float = 0.0
+    @Published var isPortraitMode = false
 
     // Public so CameraPreviewView can bind its layer to the session
     nonisolated let captureSession = AVCaptureSession()
@@ -22,7 +24,7 @@ class CameraService: NSObject, ObservableObject {
     private var currentVideoFileURL: URL?
 
     // Use an array to support overlapping captures (rapid fire)
-    private nonisolated(unsafe) var pendingPhotoHandlers: [Int64: (UIImage?) -> Void] = [:]
+    private nonisolated(unsafe) var pendingPhotoHandlers: [Int64: (portrait: Bool, handler: (UIImage?) -> Void)] = [:]
     private nonisolated let handlersLock = NSLock()
 
     private nonisolated(unsafe) var videoCompletionHandler: ((URL?) -> Void)?
@@ -139,6 +141,23 @@ class CameraService: NSObject, ObservableObject {
         }
     }
 
+    /// Restarts a previously configured session and fires `onRunning` when the first frame arrives.
+    func restartSession(onRunning: @escaping () -> Void) {
+        runningObservation?.invalidate()
+        runningObservation = captureSession.observe(\.isRunning, options: [.new]) { [weak self] _, change in
+            if change.newValue == true {
+                DispatchQueue.main.async { onRunning() }
+                self?.runningObservation?.invalidate()
+                self?.runningObservation = nil
+            }
+        }
+        sessionQueue.async { [captureSession] in
+            if !captureSession.isRunning {
+                captureSession.startRunning()
+            }
+        }
+    }
+
     func stopSession() {
         sessionQueue.async { [captureSession] in
             if captureSession.isRunning {
@@ -154,10 +173,15 @@ class CameraService: NSObject, ObservableObject {
 
         let flash = flashMode
         let session = captureSession
+        let portrait = isPortraitMode
 
         // Build settings on the calling thread (no queue hop needed)
         let settings = AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .speed
+
+        if portrait && photoOutput.isDepthDataDeliveryEnabled {
+            settings.isDepthDataDeliveryEnabled = true
+        }
 
         // Check flash support
         if let device = (session.inputs.first(where: {
@@ -170,7 +194,7 @@ class CameraService: NSObject, ObservableObject {
         // Store handler keyed by uniqueID for overlapping captures
         let uniqueID = settings.uniqueID
         handlersLock.lock()
-        pendingPhotoHandlers[uniqueID] = completion
+        pendingPhotoHandlers[uniqueID] = (portrait: portrait, handler: completion)
         handlersLock.unlock()
 
         // Dispatch only the actual capture call to session queue
@@ -182,7 +206,7 @@ class CameraService: NSObject, ObservableObject {
     // MARK: - Video Recording
 
     func startVideoRecording() {
-        guard let videoOutput else { return }
+        guard let videoOutput, !videoOutput.isRecording else { return }
 
         let fileName = UUID().uuidString
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -209,6 +233,19 @@ class CameraService: NSObject, ObservableObject {
     }
 
     // MARK: - Camera Controls
+
+    func switchSessionPreset(forVideo: Bool) {
+        let targetPreset: AVCaptureSession.Preset = forVideo ? .hd1920x1080 : .photo
+        guard captureSession.sessionPreset != targetPreset else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.captureSession.beginConfiguration()
+            if self.captureSession.canSetSessionPreset(targetPreset) {
+                self.captureSession.sessionPreset = targetPreset
+            }
+            self.captureSession.commitConfiguration()
+        }
+    }
 
     func switchCamera() {
         let newPosition: AVCaptureDevice.Position = cameraPosition == .back ? .front : .back
@@ -299,6 +336,64 @@ class CameraService: NSObject, ObservableObject {
         }
     }
 
+    func switchToPortraitMode(_ enabled: Bool) {
+        isPortraitMode = enabled
+        let photoOut = self.photoOutput
+        let position = self.cameraPosition
+
+        sessionQueue.async { [captureSession] in
+            // Phase 1: Swap camera input
+            captureSession.beginConfiguration()
+
+            for input in captureSession.inputs {
+                if let devInput = input as? AVCaptureDeviceInput,
+                   devInput.device.hasMediaType(.video) {
+                    captureSession.removeInput(devInput)
+                }
+            }
+
+            let preferred: AVCaptureDevice.DeviceType = enabled ? .builtInDualWideCamera : .builtInWideAngleCamera
+            let device = AVCaptureDevice.default(preferred, for: .video, position: position)
+                ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+
+            if let device, let newInput = try? AVCaptureDeviceInput(device: device),
+               captureSession.canAddInput(newInput) {
+                captureSession.addInput(newInput)
+            }
+
+            if captureSession.canSetSessionPreset(.photo) {
+                captureSession.sessionPreset = .photo
+            }
+
+            captureSession.commitConfiguration()
+
+            // Phase 2: Enable depth delivery AFTER input is committed
+            guard let photoOut else { return }
+            captureSession.beginConfiguration()
+            photoOut.isDepthDataDeliveryEnabled = enabled && photoOut.isDepthDataDeliverySupported
+            captureSession.commitConfiguration()
+        }
+    }
+
+    func setExposureBias(_ bias: Float) {
+        exposureBias = bias
+        let session = captureSession
+        sessionQueue.async {
+            guard let device = (session.inputs.first(where: {
+                ($0 as? AVCaptureDeviceInput)?.device.hasMediaType(.video) == true
+            }) as? AVCaptureDeviceInput)?.device else { return }
+
+            let clamped = max(device.minExposureTargetBias, min(bias, device.maxExposureTargetBias))
+            do {
+                try device.lockForConfiguration()
+                device.setExposureTargetBias(clamped, completionHandler: nil)
+                device.unlockForConfiguration()
+            } catch {
+                print("Error setting exposure bias: \(error)")
+            }
+        }
+    }
+
     deinit {
         runningObservation?.invalidate()
         if captureSession.isRunning {
@@ -318,23 +413,26 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
 
         // Retrieve the handler for this specific capture
         handlersLock.lock()
-        let handler = pendingPhotoHandlers.removeValue(forKey: uniqueID)
+        let entry = pendingPhotoHandlers.removeValue(forKey: uniqueID)
         handlersLock.unlock()
+
+        guard let entry else { return }
+        let handler = entry.handler
 
         if let error {
             print("Photo capture error: \(error)")
-            DispatchQueue.main.async { handler?(nil) }
+            DispatchQueue.main.async { handler(nil) }
             return
         }
 
         // Process image on background queue to keep session queue free for next capture
         DispatchQueue.global(qos: .userInitiated).async {
             guard let imageData = photo.fileDataRepresentation() else {
-                DispatchQueue.main.async { handler?(nil) }
+                DispatchQueue.main.async { handler(nil) }
                 return
             }
             let image = UIImage(data: imageData)
-            DispatchQueue.main.async { handler?(image) }
+            DispatchQueue.main.async { handler(image) }
         }
     }
 }
@@ -346,12 +444,13 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         from connections: [AVCaptureConnection],
         error: Error?
     ) {
+        let url: URL? = error == nil ? outputFileURL : nil
         if let error {
             print("Video recording error: \(error)")
         }
         DispatchQueue.main.async {
             self.isRecording = false
-            self.videoCompletionHandler?(outputFileURL)
+            self.videoCompletionHandler?(url)
             self.videoCompletionHandler = nil
         }
     }

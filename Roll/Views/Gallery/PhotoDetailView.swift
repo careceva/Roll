@@ -9,17 +9,19 @@ struct PhotoDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let assets: [PHAsset]
     let initialAsset: PHAsset
+    var onBackToAlbum: (() -> Void)?
     @State private var currentIndex: Int
     @State private var image: UIImage?
+    @State private var scrollID: Int?
     @State private var showShareSheet = false
     @State private var showDeleteConfirmation = false
     @State private var showEditor = false
     @State private var showChrome = true
-    @State private var isLoaded = false
 
-    init(assets: [PHAsset], initialAsset: PHAsset) {
+    init(assets: [PHAsset], initialAsset: PHAsset, onBackToAlbum: (() -> Void)? = nil) {
         self.assets = assets
         self.initialAsset = initialAsset
+        self.onBackToAlbum = onBackToAlbum
         let index = assets.firstIndex(where: {
             $0.localIdentifier == initialAsset.localIdentifier
         }) ?? 0
@@ -37,44 +39,36 @@ struct PhotoDetailView: View {
             Color.black.ignoresSafeArea()
 
             // ── Media pager ────────────────────────────────────────────────
-            if isLoaded {
-                TabView(selection: $currentIndex) {
-                    ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { index, asset in
-                        if shouldLoadPhotoAt(index: index) {
-                            if asset.mediaType == .video {
-                                VideoAssetView(asset: asset, onDelete: {
-                                    showDeleteConfirmation = true
-                                }, onDismiss: {
-                                    dismiss()
-                                })
-                                .tag(index)
-                            } else {
-                                AsyncPhotoView(asset: asset)
-                                    .tag(index)
-                            }
-                        } else {
-                            Color.black.tag(index)
+            GeometryReader { geo in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(Array(assets.enumerated()), id: \.offset) { index, asset in
+                            mediaCell(asset: asset, index: index, size: geo.size)
+                                .id(index)
                         }
                     }
+                    .scrollTargetLayout()
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .scrollTargetBehavior(.paging)
+.scrollPosition(id: $scrollID)
                 .ignoresSafeArea()
-                .onTapGesture {
-                    guard currentAsset?.mediaType != .video else { return }
-                    withAnimation(.easeInOut(duration: 0.2)) { showChrome.toggle() }
-                }
-            } else {
-                ProgressView().tint(.white)
             }
+            .ignoresSafeArea()
 
             // ── Chrome — photos only ───────────────────────────────────────
             if showChrome && currentAsset?.mediaType != .video {
                 VStack {
                     HStack {
-                        Button(action: { dismiss() }) {
+                        Button(action: {
+                            if let onBackToAlbum {
+                                onBackToAlbum()
+                            } else {
+                                dismiss()
+                            }
+                        }) {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.black)
+                                .foregroundStyle(.white)
                                 .frame(width: 36, height: 36)
                         }
                         .glassEffect(in: Circle())
@@ -96,7 +90,7 @@ struct PhotoDetailView: View {
                             Button(action: { showEditor = true }) {
                                 Text("Edit")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.black)
+                                    .foregroundStyle(.white)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 8)
                             }
@@ -106,40 +100,46 @@ struct PhotoDetailView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 12)
+                    .padding(.top, 17)
 
                     Spacer()
 
-                    HStack(spacing: 32) {
+                    HStack(spacing: 40) {
                         Button(action: { showShareSheet = true }) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(.black)
-                                .frame(width: 44, height: 44)
+                                .foregroundStyle(.white)
+                                .frame(width: 48, height: 48)
                         }
-                        Spacer()
+                        .glassEffect(in: Circle())
+
                         Button(action: { showDeleteConfirmation = true }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 20, weight: .medium))
                                 .foregroundStyle(.red)
-                                .frame(width: 44, height: 44)
+                                .frame(width: 48, height: 48)
                         }
+                        .glassEffect(in: Circle())
                     }
-                    .padding(.horizontal, 36)
-                    .padding(.vertical, 12)
-                    .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .padding(.horizontal, 40)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 48)
                 }
                 .transition(.opacity)
             }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { loadMedia() }
+        .onAppear {
+            scrollID = currentIndex
+            loadMedia()
+        }
+        .onChange(of: scrollID) { _, new in
+            guard let idx = new, idx != currentIndex else { return }
+            currentIndex = idx
+        }
         .onChange(of: currentIndex) {
             loadMedia()
             showChrome = currentAsset?.mediaType != .video
+            if scrollID != currentIndex { scrollID = currentIndex }
         }
         .sheet(isPresented: $showShareSheet) {
             if let image = image { ShareSheet(items: [image]) }
@@ -166,22 +166,31 @@ struct PhotoDetailView: View {
     }
 
     private func loadMedia() {
-        guard let asset = currentAsset else { return }
-        if asset.mediaType == .video {
-            isLoaded = true
-        } else {
-            PhotoLibraryService.shared.getImage(for: asset) { img in
-                DispatchQueue.main.async {
-                    image = img
-                    isLoaded = true
-                }
-            }
+        guard let asset = currentAsset, asset.mediaType != .video else { return }
+        PhotoLibraryService.shared.getImage(for: asset) { img in
+            DispatchQueue.main.async { image = img }
         }
     }
 
-    private func shouldLoadPhotoAt(index: Int) -> Bool {
-        abs(index - currentIndex) <= 1
+    @ViewBuilder
+    private func mediaCell(asset: PHAsset, index: Int, size: CGSize) -> some View {
+        if asset.mediaType == .video {
+            VideoAssetView(asset: asset, onDelete: {
+                showDeleteConfirmation = true
+            }, onDismiss: {
+                dismiss()
+            })
+            .frame(width: size.width, height: size.height)
+        } else {
+            AsyncPhotoView(asset: asset)
+                .frame(width: size.width, height: size.height)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) { showChrome.toggle() }
+                }
+        }
     }
+
+
 }
 
 // MARK: - VideoAssetView
@@ -198,6 +207,8 @@ struct VideoAssetView: View {
     @State private var isMuted = false
     @State private var isDragging = false
     @State private var timeObserver: Any?
+    @State private var showShareSheet = false
+    @State private var videoShareURL: URL?
 
     var body: some View {
         ZStack {
@@ -210,7 +221,7 @@ struct VideoAssetView: View {
                 ProgressView().tint(.white)
             }
 
-            // Back + Delete top bar
+            // Back button — top left
             VStack {
                 HStack {
                     Button(action: onDismiss) {
@@ -218,28 +229,39 @@ struct VideoAssetView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 36, height: 36)
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
                     }
+                    .glassEffect(in: Circle())
                     Spacer()
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
-                    }
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
+                .padding(.top, 17)
                 Spacer()
             }
 
-            // Floating controls pill
-            if player != nil {
-                VStack {
-                    Spacer()
+            // Bottom: share + delete circles + controls pill
+            VStack(spacing: 0) {
+                Spacer()
+
+                HStack(spacing: 40) {
+                    Button(action: { showShareSheet = true }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: 48, height: 48)
+                    }
+                    .glassEffect(in: Circle())
+
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.red)
+                            .frame(width: 48, height: 48)
+                    }
+                    .glassEffect(in: Circle())
+                }
+                .padding(.bottom, 16)
+
+                if player != nil {
                     videoControlsPill
                         .padding(.horizontal, 20)
                         .padding(.bottom, 48)
@@ -248,6 +270,9 @@ struct VideoAssetView: View {
         }
         .onAppear { loadPlayer() }
         .onDisappear { cleanup() }
+        .sheet(isPresented: $showShareSheet) {
+            if let url = videoShareURL { ShareSheet(items: [url]) }
+        }
     }
 
     // MARK: Controls Pill
@@ -325,9 +350,14 @@ struct VideoAssetView: View {
 
     private func loadPlayer() {
         guard player == nil else { return }
-        PHImageManager.default().requestAVAsset(forVideo: asset, options: nil) { avAsset, _, _ in
+        let options = PHVideoRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .automatic
+        PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
             guard let avAsset else { return }
+            let shareURL = (avAsset as? AVURLAsset)?.url
             DispatchQueue.main.async {
+                videoShareURL = shareURL
                 let item = AVPlayerItem(asset: avAsset)
                 let p = AVPlayer(playerItem: item)
                 p.isMuted = isMuted

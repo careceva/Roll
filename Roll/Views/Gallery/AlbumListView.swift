@@ -8,6 +8,8 @@ struct AlbumListView: View {
     @AppStorage("onboardingComplete") private var onboardingComplete = false
     @State private var showCreateAlbum = false
     @State private var newAlbumName = ""
+    @State private var albumToRename: Album?
+    @State private var renameText = ""
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -71,12 +73,16 @@ struct AlbumListView: View {
                                     AlbumGridCard(albumName: album.name)
                                 }
                                 .contextMenu {
+                                    Button {
+                                        renameText = album.name
+                                        albumToRename = album
+                                    } label: {
+                                        Label("Rename", systemImage: "pencil")
+                                    }
                                     Button(role: .destructive) {
                                         let albumName = album.name
-                                        // Delete from SwiftData
                                         modelContext.delete(album)
                                         try? modelContext.save()
-                                        // Delete from Photos library & invalidate cache
                                         PhotoLibraryService.shared.deleteAlbum(named: albumName) { _ in }
                                     } label: {
                                         Label("Delete Album", systemImage: "trash")
@@ -99,20 +105,6 @@ struct AlbumListView: View {
                             .fontWeight(.semibold)
                     }
                 }
-                #if DEBUG
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Reset") {
-                        // Save names BEFORE deleting so Keychain backup is preserved
-                        iCloudBackupService.shared.saveAlbums(albums.map(\.name))
-                        for album in albums {
-                            modelContext.delete(album)
-                        }
-                        try? modelContext.save()
-                        onboardingComplete = false
-                    }
-                    .foregroundStyle(.red)
-                }
-                #endif
             }
         }
         .onAppear {
@@ -124,6 +116,24 @@ struct AlbumListView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .photoLibraryDidChange)) { _ in
             reconcileAlbums()
+        }
+        .alert("Rename Album", isPresented: Binding(
+            get: { albumToRename != nil },
+            set: { if !$0 { albumToRename = nil } }
+        )) {
+            TextField("Album Name", text: $renameText)
+            Button("Rename") {
+                guard let album = albumToRename, !renameText.isEmpty, renameText != album.name else {
+                    albumToRename = nil
+                    return
+                }
+                let oldName = album.name
+                album.name = renameText
+                try? modelContext.save()
+                PhotoLibraryService.shared.renameAlbum(from: oldName, to: renameText) { _ in }
+                albumToRename = nil
+            }
+            Button("Cancel", role: .cancel) { albumToRename = nil }
         }
         .alert("New Album", isPresented: $showCreateAlbum) {
             TextField("Album Name", text: $newAlbumName)
@@ -148,65 +158,60 @@ struct AlbumListView: View {
 
 // MARK: - Album Grid Card
 
-/// A single album card: large cover thumbnail with the album name overlaid at the bottom.
+/// A single album card: square thumbnail, name and count below — iOS Photos style.
 struct AlbumGridCard: View {
     let albumName: String
     @State private var coverImage: UIImage?
     @State private var isEmpty = false
+    @State private var photoCount = 0
 
     private let thumbnailRequestSize = CGSize(width: 400, height: 400)
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            // Cover image or empty placeholder
-            GeometryReader { geo in
+        VStack(alignment: .leading, spacing: 6) {
+            // Square thumbnail
+            ZStack {
                 if let coverImage {
                     Image(uiImage: coverImage)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.width)
-                        .clipped()
                 } else if isEmpty {
-                    // Empty album: icon on light grey background
                     Color(.systemGray6)
-                        .frame(width: geo.size.width, height: geo.size.width)
                         .overlay {
                             Image(systemName: "photo")
                                 .font(.system(size: 36, weight: .light))
                                 .foregroundStyle(Color(.systemGray3))
                         }
                 } else {
-                    // Loading
                     Color(.systemGray6)
-                        .frame(width: geo.size.width, height: geo.size.width)
                         .overlay {
-                            ProgressView()
-                                .tint(.gray)
+                            ProgressView().tint(.gray)
                         }
                 }
             }
             .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipped()
 
-            // Album name overlay with gradient scrim
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.55)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
+            // Name + count below image
+            VStack(alignment: .leading, spacing: 2) {
+                Text(albumName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
-            Text(albumName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
+                Text(photoCount == 1 ? "1 item" : "\(photoCount) items")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 2)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onAppear { loadCover() }
     }
 
     private func loadCover() {
         let assets = PhotoLibraryService.shared.fetchPhotosForAlbum(named: albumName)
+        photoCount = assets.count
         guard let firstAsset = assets.first else {
             isEmpty = true
             return

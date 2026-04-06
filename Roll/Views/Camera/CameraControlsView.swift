@@ -6,6 +6,7 @@ import AVFoundation
 enum CaptureMode: String, CaseIterable {
     case photo = "PHOTO"
     case video = "VIDEO"
+    case portrait = "PORTRAIT"
 }
 
 // MARK: - CameraControlsView
@@ -19,7 +20,8 @@ struct CameraControlsView: View {
     var onVideoEnd: () -> Void
     var onCameraSwitch: () -> Void
     var onGalleryTap: (() -> Void)?
-    var lastPhotoThumbnail: UIImage?
+    var onLastCaptureTap: (() -> Void)?
+    var onModeChanged: ((CaptureMode) -> Void)?
 
     @State private var captureMode: CaptureMode = .photo
     @State private var isRecording = false
@@ -103,6 +105,7 @@ struct CameraControlsView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: isVideoMode)
         .animation(.easeInOut(duration: 0.2), value: isRecording)
+        .onAppear { albumViewModel.loadAlbumThumbnail() }
     }
 
     // MARK: - Album Pill (glass capsule, vertical swipe)
@@ -219,12 +222,13 @@ struct CameraControlsView: View {
         ZStack {
             // Sliding highlight behind the selected segment
             GeometryReader { geo in
-                let segmentWidth = geo.size.width / 2
+                let segmentWidth = geo.size.width / CGFloat(CaptureMode.allCases.count)
+                let index = CGFloat(CaptureMode.allCases.firstIndex(of: captureMode) ?? 0)
                 Capsule()
                     .fill(Color.white.opacity(0.25))
                     .frame(width: segmentWidth - 4, height: geo.size.height - 4)
                     .offset(
-                        x: (captureMode == .photo ? 0 : segmentWidth) + 2,
+                        x: index * segmentWidth + 2,
                         y: 2
                     )
                     .animation(.spring(duration: 0.3, bounce: 0.15), value: captureMode)
@@ -234,12 +238,13 @@ struct CameraControlsView: View {
             HStack(spacing: 0) {
                 ForEach(CaptureMode.allCases, id: \.self) { mode in
                     Button {
-                        if isRecording && mode == .photo {
+                        if isRecording && mode != .video {
                             isRecording = false
                             stopTimer()
                             onVideoEnd()
                         }
                         withAnimation(.spring(duration: 0.3, bounce: 0.15)) { captureMode = mode }
+                        onModeChanged?(mode)
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Text(mode.rawValue)
@@ -253,7 +258,7 @@ struct CameraControlsView: View {
                 }
             }
         }
-        .frame(width: 170, height: 40)
+        .frame(width: 260, height: 40)
         .glassEffect(in: Capsule())
     }
 
@@ -261,20 +266,26 @@ struct CameraControlsView: View {
 
     private var bottomBar: some View {
         HStack(alignment: .center, spacing: 0) {
-            // Gallery thumbnail
-            Button(action: { onGalleryTap?() }) {
-                if let thumbnail = lastPhotoThumbnail {
+            // Gallery thumbnail — shows most recent photo from selected album
+            Button(action: {
+                if albumViewModel.albumThumbnail != nil {
+                    onLastCaptureTap?()
+                } else {
+                    onGalleryTap?()
+                }
+            }) {
+                if let thumbnail = albumViewModel.albumThumbnail {
                     Image(uiImage: thumbnail)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 46, height: 46)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
                         )
                 } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color.white.opacity(0.12))
                         .frame(width: 46, height: 46)
                         .overlay(
@@ -292,7 +303,7 @@ struct CameraControlsView: View {
                 mode: captureMode,
                 isRecording: isRecording,
                 onTap: {
-                    if captureMode == .photo {
+                    if captureMode == .photo || captureMode == .portrait {
                         onPhotoTaken()
                     } else {
                         if isRecording {
@@ -357,12 +368,14 @@ struct CameraControlsView: View {
     }
 
     private func startTimer() {
+        UIApplication.shared.isIdleTimerDisabled = true
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             recordingDuration += 1
         }
     }
 
     private func stopTimer() {
+        UIApplication.shared.isIdleTimerDisabled = false
         recordingTimer?.invalidate()
         recordingTimer = nil
         recordingDuration = 0
@@ -385,7 +398,7 @@ struct CameraShutterButton: View {
                 .frame(width: 72, height: 72)
 
             Group {
-                if mode == .photo {
+                if mode == .photo || mode == .portrait {
                     Circle()
                         .fill(Color.white)
                         .frame(width: 58, height: 58)
@@ -410,7 +423,7 @@ struct CameraShutterButton: View {
                 .onEnded { _ in
                     isPressed = false
                     onTap()
-                    if mode == .photo {
+                    if mode == .photo || mode == .portrait {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     }
                 }

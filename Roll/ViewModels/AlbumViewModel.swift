@@ -1,19 +1,52 @@
 import Combine
 import SwiftData
 import Foundation
+import UIKit
 
 class AlbumViewModel: ObservableObject {
     @Published var albums: [Album] = []
     @Published var selectedAlbum: Album?
     @Published var isCreatingAlbum = false
+    @Published var albumThumbnail: UIImage?
 
     private let modelContext: ModelContext
     private var cancellables = Set<AnyCancellable>()
+
+    private let lastAlbumKey = "lastSelectedAlbumName"
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         fetchAlbums()
         observePhotoLibraryChanges()
+        observeSelectedAlbum()
+    }
+
+    private func observeSelectedAlbum() {
+        $selectedAlbum
+            .compactMap { $0?.name }
+            .sink { [weak self] name in
+                UserDefaults.standard.set(name, forKey: self?.lastAlbumKey ?? "lastSelectedAlbumName")
+            }
+            .store(in: &cancellables)
+    }
+
+    func loadAlbumThumbnail(for albumName: String? = nil) {
+        let name = albumName ?? selectedAlbum?.name ?? ""
+        guard !name.isEmpty else {
+            albumThumbnail = nil
+            return
+        }
+        PhotoLibraryService.shared.invalidateAlbumCache(for: name)
+        let assets = PhotoLibraryService.shared.fetchPhotosForAlbum(named: name)
+        guard let firstAsset = assets.first else {
+            albumThumbnail = nil
+            return
+        }
+        PhotoLibraryService.shared.getThumbnail(for: firstAsset, size: CGSize(width: 92, height: 92)) { [weak self] img in
+            DispatchQueue.main.async {
+                self?.albumThumbnail = img
+            }
+        }
     }
 
     // MARK: - Photo Library Change Observation
@@ -79,7 +112,8 @@ class AlbumViewModel: ObservableObject {
                    !fetchedAlbums.contains(where: { $0.id == selected.id }) {
                     self.selectedAlbum = fetchedAlbums.first
                 } else if self.selectedAlbum == nil && !fetchedAlbums.isEmpty {
-                    self.selectedAlbum = fetchedAlbums[0]
+                    let lastName = UserDefaults.standard.string(forKey: self.lastAlbumKey)
+                    self.selectedAlbum = fetchedAlbums.first(where: { $0.name == lastName }) ?? fetchedAlbums[0]
                 }
             }
         } catch {
@@ -123,12 +157,13 @@ class AlbumViewModel: ObservableObject {
         if let currentIndex = albums.firstIndex(where: { $0.id == selectedAlbum?.id }) {
             let nextIndex = (currentIndex + 1) % albums.count
             let newAlbum = albums[nextIndex]
-            // Only update if actually changing to prevent unnecessary redraws
             if newAlbum.id != selectedAlbum?.id {
                 selectedAlbum = newAlbum
+                loadAlbumThumbnail(for: newAlbum.name)
             }
         } else if selectedAlbum == nil {
             selectedAlbum = albums[0]
+            loadAlbumThumbnail(for: albums[0].name)
         }
     }
 
@@ -138,12 +173,13 @@ class AlbumViewModel: ObservableObject {
         if let currentIndex = albums.firstIndex(where: { $0.id == selectedAlbum?.id }) {
             let nextIndex = currentIndex == 0 ? albums.count - 1 : currentIndex - 1
             let newAlbum = albums[nextIndex]
-            // Only update if actually changing to prevent unnecessary redraws
             if newAlbum.id != selectedAlbum?.id {
                 selectedAlbum = newAlbum
+                loadAlbumThumbnail(for: newAlbum.name)
             }
         } else if selectedAlbum == nil {
             selectedAlbum = albums[0]
+            loadAlbumThumbnail(for: albums[0].name)
         }
     }
 }

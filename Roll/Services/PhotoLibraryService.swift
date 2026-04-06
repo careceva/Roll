@@ -71,7 +71,7 @@ class PhotoLibraryService: NSObject {
         var placeholderIdentifier: String?
 
         PHPhotoLibrary.shared().performChanges({
-            let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: videoURL)!
+            guard let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: videoURL) else { return }
             placeholderIdentifier = creationRequest.placeholderForCreatedAsset?.localIdentifier
         }) { success, error in
             if success, let identifier = placeholderIdentifier {
@@ -124,6 +124,27 @@ class PhotoLibraryService: NSObject {
             placeholderIdentifier = request.placeholderForCreatedAssetCollection.localIdentifier
         }) { success, _ in
             completion(success, placeholderIdentifier)
+        }
+    }
+
+    func renameAlbum(from oldName: String, to newName: String, completion: @escaping (Bool) -> Void) {
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.predicate = NSPredicate(format: "title = %@", oldName)
+        let collections = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: fetchOptions)
+
+        guard let collection = collections.firstObject else {
+            completion(false)
+            return
+        }
+
+        PHPhotoLibrary.shared().performChanges({
+            guard let request = PHAssetCollectionChangeRequest(for: collection) else { return }
+            request.title = newName
+        }) { success, _ in
+            if success {
+                self.invalidateAlbumCache(for: oldName)
+            }
+            completion(success)
         }
     }
 

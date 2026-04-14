@@ -7,20 +7,21 @@ import CoreMedia
 
 struct PhotoDetailView: View {
     @Environment(\.dismiss) private var dismiss
-    let assets: [PHAsset]
+    @State private var liveAssets: [PHAsset]
     let initialAsset: PHAsset
+    var albumName: String = ""
     var onBackToAlbum: (() -> Void)?
     @State private var currentIndex: Int
     @State private var image: UIImage?
-    @State private var scrollID: Int?
+    @State private var scrollID: String?
     @State private var showShareSheet = false
-    @State private var showDeleteConfirmation = false
     @State private var showEditor = false
     @State private var showChrome = true
 
-    init(assets: [PHAsset], initialAsset: PHAsset, onBackToAlbum: (() -> Void)? = nil) {
-        self.assets = assets
+    init(assets: [PHAsset], initialAsset: PHAsset, albumName: String = "", onBackToAlbum: (() -> Void)? = nil) {
+        _liveAssets = State(initialValue: assets)
         self.initialAsset = initialAsset
+        self.albumName = albumName
         self.onBackToAlbum = onBackToAlbum
         let index = assets.firstIndex(where: {
             $0.localIdentifier == initialAsset.localIdentifier
@@ -30,8 +31,8 @@ struct PhotoDetailView: View {
     }
 
     private var currentAsset: PHAsset? {
-        guard currentIndex >= 0 && currentIndex < assets.count else { return nil }
-        return assets[currentIndex]
+        guard currentIndex >= 0 && currentIndex < liveAssets.count else { return nil }
+        return liveAssets[currentIndex]
     }
 
     var body: some View {
@@ -42,9 +43,9 @@ struct PhotoDetailView: View {
             GeometryReader { geo in
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 0) {
-                        ForEach(Array(assets.enumerated()), id: \.offset) { index, asset in
+                        ForEach(Array(liveAssets.enumerated()), id: \.element.localIdentifier) { index, asset in
                             mediaCell(asset: asset, index: index, size: geo.size)
-                                .id(index)
+                                .id(asset.localIdentifier)
                         }
                     }
                     .scrollTargetLayout()
@@ -75,8 +76,8 @@ struct PhotoDetailView: View {
 
                         Spacer()
 
-                        if assets.count > 1 {
-                            Text("\(currentIndex + 1) / \(assets.count)")
+                        if liveAssets.count > 1 {
+                            Text("\(currentIndex + 1) / \(liveAssets.count)")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(.primary)
                                 .padding(.horizontal, 12)
@@ -113,7 +114,7 @@ struct PhotoDetailView: View {
                         }
                         .glassEffect(in: Circle())
 
-                        Button(action: { showDeleteConfirmation = true }) {
+                        Button(action: { deleteCurrentAsset() }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 20, weight: .medium))
                                 .foregroundStyle(.red)
@@ -129,39 +130,51 @@ struct PhotoDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
-            scrollID = currentIndex
+            scrollID = liveAssets[currentIndex].localIdentifier
             loadMedia()
         }
-        .onChange(of: scrollID) { _, new in
-            guard let idx = new, idx != currentIndex else { return }
+        .onChange(of: scrollID) { _, newID in
+            guard let newID,
+                  let idx = liveAssets.firstIndex(where: { $0.localIdentifier == newID }),
+                  idx != currentIndex else { return }
             currentIndex = idx
         }
         .onChange(of: currentIndex) {
             loadMedia()
             showChrome = currentAsset?.mediaType != .video
-            if scrollID != currentIndex { scrollID = currentIndex }
+            if let asset = currentAsset, scrollID != asset.localIdentifier {
+                scrollID = asset.localIdentifier
+            }
         }
         .sheet(isPresented: $showShareSheet) {
             if let image = image { ShareSheet(items: [image]) }
         }
         .sheet(isPresented: $showEditor) {
-            if let image = image { PhotoEditorView(image: image) }
+            if let image = image { PhotoEditorView(image: image, albumName: albumName) }
         }
-        .confirmationDialog(
-            currentAsset?.mediaType == .video ? "Delete Video" : "Delete Photo",
-            isPresented: $showDeleteConfirmation
-        ) {
-            Button("Delete", role: .destructive) {
-                if let asset = currentAsset {
-                    PhotoLibraryService.shared.deleteAsset(asset) { _ in
-                        DispatchQueue.main.async { dismiss() }
-                    }
+    }
+
+    private func deleteCurrentAsset() {
+        guard let asset = currentAsset else { return }
+        let deletingIndex = currentIndex
+
+        PhotoLibraryService.shared.deleteAsset(asset) { success in
+            DispatchQueue.main.async {
+                guard success else { return }
+
+                liveAssets.remove(at: deletingIndex)
+
+                if liveAssets.isEmpty {
+                    dismiss()
+                    return
                 }
+
+                // Stay at same index or move back if we were at the end
+                let newIndex = min(deletingIndex, liveAssets.count - 1)
+                currentIndex = newIndex
+                scrollID = liveAssets[newIndex].localIdentifier
+                loadMedia()
             }
-        } message: {
-            Text(currentAsset?.mediaType == .video
-                 ? "Are you sure you want to delete this video?"
-                 : "Are you sure you want to delete this photo?")
         }
     }
 
@@ -176,7 +189,7 @@ struct PhotoDetailView: View {
     private func mediaCell(asset: PHAsset, index: Int, size: CGSize) -> some View {
         if asset.mediaType == .video {
             VideoAssetView(asset: asset, onDelete: {
-                showDeleteConfirmation = true
+                deleteCurrentAsset()
             }, onDismiss: {
                 dismiss()
             })

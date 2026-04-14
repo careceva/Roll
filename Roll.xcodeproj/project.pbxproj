@@ -6,7 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AA00000000000000000000AD /* RollControlCenter.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A1 /* RollControlCenter.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		AA00000000000000000000AA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CB2703BE2F6C333B00D213C7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA00000000000000000000A6;
+			remoteInfo = RollControlCenter;
+		};
 		CB2703D62F6C333D00D213C7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = CB2703BE2F6C333B00D213C7 /* Project object */;
@@ -23,13 +34,46 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		AA00000000000000000000AC /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA00000000000000000000AD /* RollControlCenter.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		AA00000000000000000000A1 /* RollControlCenter.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RollControlCenter.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CB2703C62F6C333B00D213C7 /* Roll.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Roll.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CB2703D52F6C333D00D213C7 /* RollTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RollTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CB2703DF2F6C333D00D213C7 /* RollUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RollUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA00000000000000000000AE /* Exceptions for "RollControlCenter" folder in "RollControlCenter" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA00000000000000000000A6 /* RollControlCenter */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA00000000000000000000A2 /* RollControlCenter */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA00000000000000000000AE /* Exceptions for "RollControlCenter" folder in "RollControlCenter" target */,
+			);
+			path = RollControlCenter;
+			sourceTree = "<group>";
+		};
 		CB2703C82F6C333B00D213C7 /* Roll */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Roll;
@@ -48,6 +92,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		AA00000000000000000000A4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CB2703C32F6C333B00D213C7 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -76,6 +127,7 @@
 			isa = PBXGroup;
 			children = (
 				CB2703C82F6C333B00D213C7 /* Roll */,
+				AA00000000000000000000A2 /* RollControlCenter */,
 				CB2703D82F6C333D00D213C7 /* RollTests */,
 				CB2703E22F6C333D00D213C7 /* RollUITests */,
 				CB2703C72F6C333B00D213C7 /* Products */,
@@ -86,6 +138,7 @@
 			isa = PBXGroup;
 			children = (
 				CB2703C62F6C333B00D213C7 /* Roll.app */,
+				AA00000000000000000000A1 /* RollControlCenter.appex */,
 				CB2703D52F6C333D00D213C7 /* RollTests.xctest */,
 				CB2703DF2F6C333D00D213C7 /* RollUITests.xctest */,
 			);
@@ -95,6 +148,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AA00000000000000000000A6 /* RollControlCenter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA00000000000000000000A9 /* Build configuration list for PBXNativeTarget "RollControlCenter" */;
+			buildPhases = (
+				AA00000000000000000000A3 /* Sources */,
+				AA00000000000000000000A4 /* Frameworks */,
+				AA00000000000000000000A5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA00000000000000000000A2 /* RollControlCenter */,
+			);
+			name = RollControlCenter;
+			packageProductDependencies = (
+			);
+			productName = RollControlCenter;
+			productReference = AA00000000000000000000A1 /* RollControlCenter.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		CB2703C52F6C333B00D213C7 /* Roll */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CB2703E92F6C333D00D213C7 /* Build configuration list for PBXNativeTarget "Roll" */;
@@ -102,10 +177,12 @@
 				CB2703C22F6C333B00D213C7 /* Sources */,
 				CB2703C32F6C333B00D213C7 /* Frameworks */,
 				CB2703C42F6C333B00D213C7 /* Resources */,
+				AA00000000000000000000AC /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA00000000000000000000AB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CB2703C82F6C333B00D213C7 /* Roll */,
@@ -173,6 +250,9 @@
 				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					AA00000000000000000000A6 = {
+						CreatedOnToolsVersion = 26.3;
+					};
 					CB2703C52F6C333B00D213C7 = {
 						CreatedOnToolsVersion = 26.3;
 					};
@@ -201,6 +281,7 @@
 			projectRoot = "";
 			targets = (
 				CB2703C52F6C333B00D213C7 /* Roll */,
+				AA00000000000000000000A6 /* RollControlCenter */,
 				CB2703D42F6C333D00D213C7 /* RollTests */,
 				CB2703DE2F6C333D00D213C7 /* RollUITests */,
 			);
@@ -208,6 +289,13 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AA00000000000000000000A5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CB2703C42F6C333B00D213C7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -232,6 +320,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		AA00000000000000000000A3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CB2703C22F6C333B00D213C7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -256,6 +351,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		AA00000000000000000000AB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA00000000000000000000A6 /* RollControlCenter */;
+			targetProxy = AA00000000000000000000AA /* PBXContainerItemProxy */;
+		};
 		CB2703D72F6C333D00D213C7 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = CB2703C52F6C333B00D213C7 /* Roll */;
@@ -269,6 +369,56 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		AA00000000000000000000A7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9H4952RRWH;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RollControlCenter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Roll;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = me.Roll.RollControlCenter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA00000000000000000000A8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9H4952RRWH;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RollControlCenter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Roll;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = me.Roll.RollControlCenter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		CB2703E72F6C333D00D213C7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -555,6 +705,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		AA00000000000000000000A9 /* Build configuration list for PBXNativeTarget "RollControlCenter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000000000000000000A7 /* Debug */,
+				AA00000000000000000000A8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		CB2703C12F6C333B00D213C7 /* Build configuration list for PBXProject "Roll" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

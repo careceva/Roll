@@ -35,7 +35,7 @@ struct AlbumGridView: View {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(photos, id: \.localIdentifier) { asset in
                             NavigationLink(
-                                destination: PhotoDetailView(assets: photos, initialAsset: asset)
+                                destination: PhotoDetailView(assets: photos, initialAsset: asset, albumName: album.name)
                             ) {
                                 PhotoThumbnail(asset: asset)
                                     .aspectRatio(1, contentMode: .fit)

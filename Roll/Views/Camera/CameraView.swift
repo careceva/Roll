@@ -18,9 +18,11 @@ struct CameraView: View {
     @State private var volumeObserver: NSKeyValueObservation?
     @State private var lastVolume: Float = 0
     @State private var isVolumeRecording = false
+    @State private var isResettingVolume = false
     @State private var exposureBias: Float = 0.0
     @State private var showExposureSlider = false
     @State private var exposureSliderTimer: Timer?
+    @State private var previewFrozen = false
 
     // MARK: - Volume Button Shutter
 
@@ -32,8 +34,13 @@ struct CameraView: View {
         volumeObserver = audioSession.observe(\.outputVolume, options: [.new, .old]) { session, change in
             guard let newVal = change.newValue, let oldVal = change.oldValue, newVal != oldVal else { return }
             DispatchQueue.main.async {
+                guard !isResettingVolume else { return }
+                isResettingVolume = true
                 handleVolumeButtonPress()
                 resetSystemVolume(to: oldVal)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isResettingVolume = false
+                }
             }
         }
     }
@@ -96,7 +103,7 @@ struct CameraView: View {
         let albumName = albumViewModel?.selectedAlbum?.name ?? ""
         let assets = PhotoLibraryService.shared.fetchPhotosForAlbum(named: albumName)
         if let firstAsset = assets.first {
-            PhotoDetailView(assets: assets, initialAsset: firstAsset, onBackToAlbum: {
+            PhotoDetailView(assets: assets, initialAsset: firstAsset, albumName: albumName, onBackToAlbum: {
                 showLastCapture = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     showGallery = true
@@ -110,27 +117,28 @@ struct CameraView: View {
     private func toggleMode() {
         let isMovingToVideo = currentCaptureMode == .video
 
-        // 1. Start the UI animation immediately
-        withAnimation(.easeInOut(duration: 0.45)) {
-            isVideoMode = isMovingToVideo
-            // This handles the scaleEffect (1.0 -> 1.12) and bar heights
-        }
-
-        // 2. Delay the hardware "hiccup"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if currentCaptureMode != .portrait {
-                cameraViewModel.cameraService.switchSessionPreset(forVideo: isMovingToVideo)
-            }
+        // Switch the session preset underneath the frozen snapshot
+        cameraViewModel.cameraService.switchSessionPreset(forVideo: isMovingToVideo) {
+            previewFrozen = false
         }
     }
 
     var body: some View {
         ZStack {
-            // ── Layer 1: Camera preview (full bleed, scales for video crop) ─
+            // ── Layer 1: Exact 4:3 preview + black bars ──
             GeometryReader { geo in
-                CameraPreviewView(session: cameraViewModel.cameraService.captureSession)
-                    .ignoresSafeArea()
-                    .scaleEffect(isVideoMode ? 1.15 : 1.0)
+                let fullH = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+                let fullW = geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing
+                let previewH = fullW * 4.0 / 3.0
+                let totalBarH = max(0.0, fullH - previewH)
+                let topBarH = totalBarH * 0.35
+
+                Color.black.ignoresSafeArea()
+
+                // 4:3 preview — exact sensor FOV, no crop
+                CameraPreviewView(session: cameraViewModel.cameraService.captureSession, isFrozen: previewFrozen)
+                    .frame(width: fullW, height: previewH)
+                    .position(x: fullW / 2, y: topBarH + previewH / 2)
                     .gesture(
                         MagnificationGesture()
                             .onChanged { scale in
@@ -144,47 +152,33 @@ struct CameraView: View {
                         SpatialTapGesture()
                             .onEnded { value in
                                 let location = value.location
-                                withAnimation(.easeInOut(duration: 0.3)) { focusPoint = location }
 
-                                // Show exposure slider
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    focusPoint = CGPoint(x: location.x, y: location.y + topBarH)
+                                }
+
                                 showExposureSlider = true
                                 exposureBias = 0.0
                                 cameraViewModel.cameraService.setExposureBias(0.0)
                                 resetExposureSliderTimer()
 
                                 cameraViewModel.cameraService.focus(at: CGPoint(
-                                    x: location.x / geo.size.width,
-                                    y: location.y / geo.size.height
+                                    x: location.x / fullW,
+                                    y: location.y / previewH
                                 ))
                             }
                     )
+
+                // Bottom bar — blocks tap-to-focus below the preview
+                let bottomBarY = topBarH + previewH
+                let bottomBarH = fullH - bottomBarY
+                Color.black
+                    .frame(width: fullW, height: bottomBarH)
+                    .position(x: fullW / 2, y: bottomBarY + bottomBarH / 2)
             }
             .ignoresSafeArea()
 
-            // ── Layer 1.5: Framing bars ───────────────────────────────────
-            // Photo: taller bars (4:3 crop), Video: shorter bars (16:9 crop)
-            GeometryReader { geo in
-                let fullH = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
-                let fullW = geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing
-                let photoBarH = max(0.0, (fullH - fullW * 4.0 / 3.0) / 2.0)
-                let videoBarH = max(0.0, (fullH - fullW * 16.0 / 9.0) / 2.0)
-
-                VStack(spacing: 0) {
-                    Color.black
-                        .opacity(isVideoMode ? 1.0 : 0.2)
-                        .frame(height: isVideoMode ? videoBarH : photoBarH)
-                    Spacer()
-                    Color.black
-                        .opacity(isVideoMode ? 1.0 : 0.2)
-                        .frame(height: isVideoMode ? videoBarH : photoBarH)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
-            // ── Layer 2: Controls (full screen, black bars top & bottom) ──
+            // ── Layer 2: Controls ──
             if let albumVM = albumViewModel {
                 CameraControlsView(
                     cameraService: cameraViewModel.cameraService,
@@ -211,13 +205,24 @@ struct CameraView: View {
                         let wasPortrait = currentCaptureMode == .portrait
                         currentCaptureMode = mode
 
-                        if mode == .portrait {
-                            cameraViewModel.cameraService.switchToPortraitMode(true)
-                        } else if wasPortrait {
-                            cameraViewModel.cameraService.switchToPortraitMode(false)
+                        // Freeze first so no intermediate frames are visible
+                        previewFrozen = true
+
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            isVideoMode = mode == .video
                         }
 
-                        toggleMode()
+                        if mode == .portrait {
+                            cameraViewModel.cameraService.switchToPortraitMode(true) {
+                                previewFrozen = false
+                            }
+                        } else if wasPortrait {
+                            cameraViewModel.cameraService.switchToPortraitMode(false) {
+                                previewFrozen = false
+                            }
+                        } else {
+                            toggleMode()
+                        }
                     },
                 )
                 .ignoresSafeArea()
@@ -232,7 +237,8 @@ struct CameraView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .glassEffect(in: Capsule())
+                        .background(Color.black.opacity(0.35))
+                        .clipShape(Capsule())
                         .padding(.bottom, 180)
                         .transition(.opacity.combined(with: .scale(0.85)))
                 }
@@ -274,9 +280,10 @@ struct CameraView: View {
             }
 
             // ── Hidden MPVolumeView to suppress system volume HUD ────────
+            // Must have non-zero size and non-zero opacity to suppress the HUD
             MPVolumeViewRepresentable()
-                .frame(width: 0, height: 0)
-                .opacity(0)
+                .frame(width: 1, height: 1)
+                .opacity(0.001)
                 .allowsHitTesting(false)
         }
         .onAppear {
@@ -309,6 +316,22 @@ struct CameraView: View {
             // Photo just captured — use it as the thumbnail immediately
             if let img = cameraViewModel.lastCapturedImage {
                 albumViewModel?.albumThumbnail = img
+            }
+        }
+        .onChange(of: showGallery) {
+            if showGallery || showLastCapture {
+                volumeObserver?.invalidate()
+                volumeObserver = nil
+            } else {
+                setupVolumeButtonObserver()
+            }
+        }
+        .onChange(of: showLastCapture) {
+            if showGallery || showLastCapture {
+                volumeObserver?.invalidate()
+                volumeObserver = nil
+            } else {
+                setupVolumeButtonObserver()
             }
         }
         .sheet(isPresented: $showGallery, onDismiss: {

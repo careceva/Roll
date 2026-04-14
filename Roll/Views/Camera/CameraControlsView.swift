@@ -9,6 +9,12 @@ enum CaptureMode: String, CaseIterable {
     case portrait = "PORTRAIT"
 }
 
+// The two visible pages of modes
+private let modePages: [[CaptureMode]] = [
+    [.photo, .video],
+    [.video, .portrait],
+]
+
 // MARK: - CameraControlsView
 
 struct CameraControlsView: View {
@@ -35,6 +41,8 @@ struct CameraControlsView: View {
     @State private var isShowingAlbumPicker = false
     @State private var pillShakeOffset: CGFloat = 0
     @State private var isShowingCreateAlbum = false
+    @State private var modePageIndex: Int = 0
+    @State private var modeDragOffset: CGFloat = 0
 
     private var isVideoMode: Bool { captureMode == .video }
 
@@ -42,7 +50,7 @@ struct CameraControlsView: View {
         VStack(spacing: 0) {
 
             // ═══════════════════════════════════════════════════
-            // TOP BAR — semi-transparent (photo only)
+            // TOP BAR — semi-transparent overlay (photo/portrait only)
             // ═══════════════════════════════════════════════════
             if !isVideoMode {
                 HStack {
@@ -55,17 +63,17 @@ struct CameraControlsView: View {
                     }
                     Spacer()
                 }
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.45))
+                .padding(.horizontal, 4)
+                .padding(.top, 4)
             }
 
             // ═══════════════════════════════════════════════════
             // ALBUM PILL — glass capsule, vertical swipe
-            // Consistent top margin in BOTH modes
             // ═══════════════════════════════════════════════════
             if !isRecording {
                 albumPill
-                    .padding(.top, isVideoMode ? 56 : 12)
+                    .padding(.top, isVideoMode ? 56 : 3)
+                    .padding(.bottom, 5)
                     .transition(.opacity)
             }
 
@@ -92,8 +100,7 @@ struct CameraControlsView: View {
             Spacer()
 
             // ═══════════════════════════════════════════════════
-            // BOTTOM SECTION — single continuous block
-            // Shutter row + toggle row, no gaps between them
+            // BOTTOM SECTION — semi-transparent overlay
             // ═══════════════════════════════════════════════════
             VStack(spacing: 0) {
                 bottomBar
@@ -101,7 +108,7 @@ struct CameraControlsView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 24)
             }
-            .background(Color.black.opacity(0.45))
+            .background(Color.clear)
         }
         .animation(.easeInOut(duration: 0.3), value: isVideoMode)
         .animation(.easeInOut(duration: 0.2), value: isRecording)
@@ -125,10 +132,11 @@ struct CameraControlsView: View {
                         .font(.system(size: 10, weight: .bold))
                 }
                 // Use .primary so text auto-adapts: black on bright glass, white on dark glass
-                .foregroundStyle(.primary)
+                .foregroundStyle(.black)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .glassEffect(in: Capsule())
+                .background(Color.white)
+                .clipShape(Capsule())
                 .offset(x: pillShakeOffset, y: albumNameOffset)
                 .opacity(albumNameOpacity)
 
@@ -259,7 +267,8 @@ struct CameraControlsView: View {
             }
         }
         .frame(width: 260, height: 40)
-        .glassEffect(in: Capsule())
+        .background(Color.black.opacity(0.35))
+        .clipShape(Capsule())
     }
 
     // MARK: - Bottom Bar
@@ -430,5 +439,3 @@ struct CameraShutterButton: View {
         )
     }
 }
-
-

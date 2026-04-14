@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild -project Roll.xcodeproj -scheme Roll -destination 'generic/platform=iOS' -configuration Debug build)",
+      "Bash(xcodebuild -project Roll.xcodeproj -scheme RollControlCenter -destination 'generic/platform=iOS' -configuration Debug build)",
+      "Bash(xcodebuild -project Roll.xcodeproj -list)",
+      "Bash(plutil -lint RollControlCenter/Info.plist)",
+      "Bash(plutil -p ~/Library/Developer/Xcode/DerivedData/Roll-bimvgtbjyfnwykdnrapcbyelhxyn/Build/Products/Debug-iphoneos/Roll.app/PlugIns/RollControlCenter.appex/Info.plist)",
+      "Bash(gh search:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(sips -g pixelWidth -g pixelHeight /Users/catalin.sandru/Documents/Roll/Roll/Roll/Resources/FilmLUTs/kodak_portra_160.png)",
+      "Read(//Users/catalin.sandru/Library/Developer/Xcode/DerivedData/Roll-bimvgtbjyfnwykdnrapcbyelhxyn/Build/Products/Debug-iphoneos/Roll.app/**)",
+      "WebFetch(domain:hrtyy.dev)"
+    ]
+  }
+}

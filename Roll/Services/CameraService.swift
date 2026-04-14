@@ -10,7 +10,7 @@ class CameraService: NSObject, ObservableObject {
     @Published var isCameraReady = false
     @Published var isRecording = false
     @Published var cameraPosition: AVCaptureDevice.Position = .back
-    @Published var flashMode: AVCaptureDevice.FlashMode = .auto
+    @Published var flashMode: AVCaptureDevice.FlashMode = .off
     @Published var zoomLevel: CGFloat = 1.0
     @Published var focusPoint: CGPoint?
     @Published var exposureBias: Float = 0.0
@@ -75,6 +75,15 @@ class CameraService: NSObject, ObservableObject {
 
         if captureSession.canAddInput(videoInput) {
             captureSession.addInput(videoInput)
+        }
+
+        // Ensure default zoom factor matches native iOS Camera (1x wide)
+        do {
+            try videoDevice.lockForConfiguration()
+            videoDevice.videoZoomFactor = 1.0
+            videoDevice.unlockForConfiguration()
+        } catch {
+            print("Error setting initial zoom: \(error)")
         }
 
         // Photo output with speed priority + responsive capture
@@ -234,9 +243,12 @@ class CameraService: NSObject, ObservableObject {
 
     // MARK: - Camera Controls
 
-    func switchSessionPreset(forVideo: Bool) {
+    func switchSessionPreset(forVideo: Bool, completion: (() -> Void)? = nil) {
         let targetPreset: AVCaptureSession.Preset = forVideo ? .hd1920x1080 : .photo
-        guard captureSession.sessionPreset != targetPreset else { return }
+        guard captureSession.sessionPreset != targetPreset else {
+            completion?()
+            return
+        }
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.captureSession.beginConfiguration()
@@ -244,6 +256,9 @@ class CameraService: NSObject, ObservableObject {
                 self.captureSession.sessionPreset = targetPreset
             }
             self.captureSession.commitConfiguration()
+            if let completion {
+                DispatchQueue.main.async { completion() }
+            }
         }
     }
 
@@ -336,12 +351,12 @@ class CameraService: NSObject, ObservableObject {
         }
     }
 
-    func switchToPortraitMode(_ enabled: Bool) {
+    func switchToPortraitMode(_ enabled: Bool, completion: (() -> Void)? = nil) {
         isPortraitMode = enabled
         let photoOut = self.photoOutput
         let position = self.cameraPosition
 
-        sessionQueue.async { [captureSession] in
+        sessionQueue.async { [weak self, captureSession] in
             // Phase 1: Swap camera input
             captureSession.beginConfiguration()
 
@@ -359,6 +374,15 @@ class CameraService: NSObject, ObservableObject {
             if let device, let newInput = try? AVCaptureDeviceInput(device: device),
                captureSession.canAddInput(newInput) {
                 captureSession.addInput(newInput)
+
+                // Set zoom to 2x for portrait (matches iOS Camera), 1x otherwise
+                let targetZoom: CGFloat = enabled ? 2.0 : 1.0
+                try? device.lockForConfiguration()
+                device.videoZoomFactor = targetZoom
+                device.unlockForConfiguration()
+                DispatchQueue.main.async {
+                    self?.zoomLevel = targetZoom
+                }
             }
 
             if captureSession.canSetSessionPreset(.photo) {
@@ -368,10 +392,15 @@ class CameraService: NSObject, ObservableObject {
             captureSession.commitConfiguration()
 
             // Phase 2: Enable depth delivery AFTER input is committed
-            guard let photoOut else { return }
-            captureSession.beginConfiguration()
-            photoOut.isDepthDataDeliveryEnabled = enabled && photoOut.isDepthDataDeliverySupported
-            captureSession.commitConfiguration()
+            if let photoOut {
+                captureSession.beginConfiguration()
+                photoOut.isDepthDataDeliveryEnabled = enabled && photoOut.isDepthDataDeliverySupported
+                captureSession.commitConfiguration()
+            }
+
+            if let completion {
+                DispatchQueue.main.async { completion() }
+            }
         }
     }
 

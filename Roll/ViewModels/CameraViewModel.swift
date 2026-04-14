@@ -47,24 +47,21 @@ class CameraViewModel: NSObject, ObservableObject {
             // Photo library save runs fully in background
             PhotoLibraryService.shared.savePhotoToLibrary(image, toAlbum: album.name) { success, identifier in
                 if success, let identifier = identifier {
-                    // Invalidate album cache so new photo shows up immediately
                     PhotoLibraryService.shared.invalidateAlbumCache(for: album.name)
 
-                    let mediaItem = MediaItem(
-                        localIdentifier: identifier,
-                        mediaType: .photo
-                    )
-                    album.mediaItems.append(mediaItem)
-                    // No explicit insert — appending to a tracked album's relationship
-                    // automatically registers the item in the context.
+                    DispatchQueue.main.async {
+                        let mediaItem = MediaItem(
+                            localIdentifier: identifier,
+                            mediaType: .photo
+                        )
+                        album.mediaItems.append(mediaItem)
 
-                    do {
-                        try modelContext.save()
-                        DispatchQueue.main.async {
+                        do {
+                            try modelContext.save()
                             self.lastPhotoLocalIdentifier = identifier
+                        } catch {
+                            print("Error saving media item: \(error)")
                         }
-                    } catch {
-                        print("Error saving media item: \(error)")
                     }
                 }
             }
@@ -85,33 +82,31 @@ class CameraViewModel: NSObject, ObservableObject {
 
             // Video saving and database operations can happen off main thread
             PhotoLibraryService.shared.saveVideoToLibrary(url, toAlbum: album.name) { success, identifier in
-                // Clean up temp file AFTER Photos library has finished reading it
                 try? FileManager.default.removeItem(at: url)
 
                 if success, let identifier = identifier {
-                    // Invalidate album cache so new video shows up
                     PhotoLibraryService.shared.invalidateAlbumCache(for: album.name)
 
-                    let mediaItem = MediaItem(
-                        localIdentifier: identifier,
-                        mediaType: .video,
-                        duration: 0
-                    )
-                    album.mediaItems.append(mediaItem)
-                    // No explicit insert — same as photo path above.
+                    DispatchQueue.main.async {
+                        let mediaItem = MediaItem(
+                            localIdentifier: identifier,
+                            mediaType: .video,
+                            duration: 0
+                        )
+                        album.mediaItems.append(mediaItem)
 
-                    do {
-                        try modelContext.save()
-                    } catch {
-                        print("Error saving media item: \(error)")
-                    }
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            print("Error saving media item: \(error)")
+                        }
 
-                    // Generate thumbnail for the saved video
-                    if let asset = PhotoLibraryService.shared.getAssetByLocalIdentifier(identifier) {
-                        PhotoLibraryService.shared.getThumbnail(for: asset, size: CGSize(width: 200, height: 200)) { thumbnail in
-                            DispatchQueue.main.async {
-                                self.lastCapturedImage = thumbnail
-                                self.lastPhotoLocalIdentifier = identifier
+                        if let asset = PhotoLibraryService.shared.getAssetByLocalIdentifier(identifier) {
+                            PhotoLibraryService.shared.getThumbnail(for: asset, size: CGSize(width: 200, height: 200)) { thumbnail in
+                                DispatchQueue.main.async {
+                                    self.lastCapturedImage = thumbnail
+                                    self.lastPhotoLocalIdentifier = identifier
+                                }
                             }
                         }
                     }

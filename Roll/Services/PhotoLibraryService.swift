@@ -8,6 +8,9 @@ extension Notification.Name {
 class PhotoLibraryService: NSObject {
     static let shared = PhotoLibraryService()
 
+    // PHCachingImageManager for pre-heating nearby assets
+    let cachingManager = PHCachingImageManager()
+
     // Thumbnail cache keyed by "localIdentifier-WIDTHxHEIGHT"
     private let thumbnailCache = NSCache<NSString, UIImage>()
 
@@ -21,9 +24,16 @@ class PhotoLibraryService: NSObject {
     private var inFlightThumbnailRequests: [String: PHImageRequestID] = [:]
     private let requestLock = NSLock()
 
+    /// Screen-scale-aware thumbnail size for grid cells.
+    static let scaledThumbnailSize: CGSize = {
+        let scale: CGFloat = 3.0 // retina scale; avoids deprecated UIScreen.main on iOS 26
+        let cellPt: CGFloat = 130 // approximate cell width in points (screen / 3 cols)
+        let px = cellPt * scale
+        return CGSize(width: px, height: px)
+    }()
+
     override init() {
         super.init()
-        // Limit full-resolution image cache to ~5-10 images
         imageCache.totalCostLimit = 100 * 1024 * 1024 // 100MB max
         PHPhotoLibrary.shared().register(self)
     }
@@ -220,98 +230,129 @@ class PhotoLibraryService: NSObject {
         }
     }
 
-    func getThumbnail(for asset: PHAsset, size: CGSize = CGSize(width: 200, height: 200), completion: @escaping (UIImage?) -> Void) {
-        // Create cache key
-        let cacheKey = "\(asset.localIdentifier)-\(Int(size.width))x\(Int(size.height))" as NSString
+    // MARK: - Pre-heating (PHCachingImageManager)
 
-        // Check cache first
-        if let cached = thumbnailCache.object(forKey: cacheKey) {
-            DispatchQueue.main.async {
-                completion(cached)
-            }
-            return
-        }
-
-        let manager = PHImageManager.default()
+    /// Start pre-fetching thumbnails for assets about to scroll into view.
+    func startCaching(assets: [PHAsset], targetSize: CGSize? = nil) {
+        let size = targetSize ?? Self.scaledThumbnailSize
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .opportunistic
         options.resizeMode = .fast
+        options.isSynchronous = false
+        cachingManager.startCachingImages(for: assets, targetSize: size, contentMode: .aspectFill, options: options)
+    }
 
-        let requestID = manager.requestImage(
-            for: asset,
-            targetSize: size,
-            contentMode: .aspectFill,
-            options: options
-        ) { image, info in
-            if let image = image {
-                // Cache the result
-                self.thumbnailCache.setObject(image, forKey: cacheKey)
-                DispatchQueue.main.async {
-                    completion(image)
-                }
-            } else {
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
-            }
+    /// Stop pre-fetching for assets that scrolled out of the preheat window.
+    func stopCaching(assets: [PHAsset], targetSize: CGSize? = nil) {
+        let size = targetSize ?? Self.scaledThumbnailSize
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .opportunistic
+        options.resizeMode = .fast
+        options.isSynchronous = false
+        cachingManager.stopCachingImages(for: assets, targetSize: size, contentMode: .aspectFill, options: options)
+    }
 
-            // Clean up tracking
-            self.requestLock.lock()
-            self.inFlightThumbnailRequests.removeValue(forKey: cacheKey as String)
-            self.requestLock.unlock()
+    /// Reset all cached images (e.g. when the album changes).
+    func resetCaching() {
+        cachingManager.stopCachingImagesForAllAssets()
+    }
+
+    // MARK: - Thumbnail Loading (opportunistic, progressive)
+
+    /// Request a thumbnail. The completion may be called **twice** — first with a fast low-res
+    /// decode, then with the higher-quality result. The `isDegraded` flag distinguishes the two.
+    func getThumbnail(
+        for asset: PHAsset,
+        size: CGSize? = nil,
+        completion: @escaping (_ image: UIImage?, _ isDegraded: Bool) -> Void
+    ) {
+        let targetSize = size ?? Self.scaledThumbnailSize
+        let cacheKey = "\(asset.localIdentifier)-\(Int(targetSize.width))x\(Int(targetSize.height))" as NSString
+
+        // Check in-memory cache — already high quality
+        if let cached = thumbnailCache.object(forKey: cacheKey) {
+            DispatchQueue.main.async { completion(cached, false) }
+            return
         }
 
-        // Track the request for potential cancellation
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .opportunistic   // low-res immediately, high-res later
+        options.resizeMode = .fast
+        options.isSynchronous = false
+
+        let requestID = cachingManager.requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        ) { [weak self] image, info in
+            guard let self, let image else {
+                DispatchQueue.main.async { completion(nil, false) }
+                return
+            }
+
+            let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+
+            // Only cache the final (non-degraded) result
+            if !degraded {
+                self.thumbnailCache.setObject(image, forKey: cacheKey)
+            }
+
+            DispatchQueue.main.async { completion(image, degraded) }
+
+            if !degraded {
+                self.requestLock.lock()
+                self.inFlightThumbnailRequests.removeValue(forKey: cacheKey as String)
+                self.requestLock.unlock()
+            }
+        }
+
         requestLock.lock()
         inFlightThumbnailRequests[cacheKey as String] = requestID
         requestLock.unlock()
     }
 
     /// Cancel in-flight thumbnail request for a given asset
-    func cancelThumbnailRequest(for asset: PHAsset, size: CGSize = CGSize(width: 200, height: 200)) {
-        let cacheKey = "\(asset.localIdentifier)-\(Int(size.width))x\(Int(size.height))" as NSString
+    func cancelThumbnailRequest(for asset: PHAsset, size: CGSize? = nil) {
+        let targetSize = size ?? Self.scaledThumbnailSize
+        let cacheKey = "\(asset.localIdentifier)-\(Int(targetSize.width))x\(Int(targetSize.height))" as NSString
         requestLock.lock()
         if let requestID = inFlightThumbnailRequests[cacheKey as String] {
-            PHImageManager.default().cancelImageRequest(requestID)
+            cachingManager.cancelImageRequest(requestID)
             inFlightThumbnailRequests.removeValue(forKey: cacheKey as String)
         }
         requestLock.unlock()
     }
 
+    // MARK: - Full-Resolution Loading
+
     func getImage(for asset: PHAsset, completion: @escaping (UIImage?) -> Void) {
-        // Create cache key for full-resolution image
         let cacheKey = "\(asset.localIdentifier)-full" as NSString
 
-        // Check cache first
         if let cached = imageCache.object(forKey: cacheKey) {
-            DispatchQueue.main.async {
-                completion(cached)
-            }
+            DispatchQueue.main.async { completion(cached) }
             return
         }
 
-        let manager = PHImageManager.default()
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
+        options.isSynchronous = false
 
-        manager.requestImage(
+        cachingManager.requestImage(
             for: asset,
             targetSize: PHImageManagerMaximumSize,
             contentMode: .aspectFill,
             options: options
-        ) { image, _ in
-            if let image = image {
-                // Cache with cost estimate
-                self.imageCache.setObject(image, forKey: cacheKey, cost: Int(image.size.width * image.size.height))
-                DispatchQueue.main.async {
-                    completion(image)
-                }
+        ) { [weak self] image, _ in
+            if let image {
+                self?.imageCache.setObject(image, forKey: cacheKey, cost: Int(image.size.width * image.size.height))
+                DispatchQueue.main.async { completion(image) }
             } else {
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
+                DispatchQueue.main.async { completion(nil) }
             }
         }
     }

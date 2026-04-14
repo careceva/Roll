@@ -4,18 +4,20 @@ import Photos
 struct MediaThumbnail: View {
     let asset: PHAsset
     @State private var thumbnail: UIImage?
+    @State private var isHighQuality = false
     @State private var isLoading = true
-    private let thumbnailSize = CGSize(width: 200, height: 200)
 
     var body: some View {
         ZStack {
             Color.gray.opacity(0.2)
 
-            if let thumbnail = thumbnail {
+            if let thumbnail {
                 Image(uiImage: thumbnail)
                     .resizable()
                     .scaledToFill()
-                    .drawingGroup() // Improves compositing performance
+                    .drawingGroup()
+                    .opacity(isHighQuality ? 1 : 0.92)
+                    .animation(.easeIn(duration: 0.15), value: isHighQuality)
             } else if isLoading {
                 ProgressView()
                     .tint(.gray)
@@ -42,21 +44,19 @@ struct MediaThumbnail: View {
             }
         }
         .clipped()
-        .onAppear {
-            loadThumbnail()
-        }
+        .onAppear { loadThumbnail() }
         .onDisappear {
-            // Cancel in-flight requests when view disappears
-            PhotoLibraryService.shared.cancelThumbnailRequest(for: asset, size: thumbnailSize)
+            PhotoLibraryService.shared.cancelThumbnailRequest(for: asset)
         }
     }
 
-    @MainActor
     private func loadThumbnail() {
-        PhotoLibraryService.shared.getThumbnail(for: asset, size: thumbnailSize) { image in
-            DispatchQueue.main.async {
-                self.thumbnail = image
-                self.isLoading = false
+        PhotoLibraryService.shared.getThumbnail(for: asset) { image, isDegraded in
+            guard let image else { return }
+            self.thumbnail = image
+            self.isLoading = false
+            if !isDegraded {
+                self.isHighQuality = true
             }
         }
     }

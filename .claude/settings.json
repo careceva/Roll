@@ -11,7 +11,9 @@
       "WebFetch(domain:github.com)",
       "Bash(sips -g pixelWidth -g pixelHeight /Users/catalin.sandru/Documents/Roll/Roll/Roll/Resources/FilmLUTs/kodak_portra_160.png)",
       "Read(//Users/catalin.sandru/Library/Developer/Xcode/DerivedData/Roll-bimvgtbjyfnwykdnrapcbyelhxyn/Build/Products/Debug-iphoneos/Roll.app/**)",
-      "WebFetch(domain:hrtyy.dev)"
+      "WebFetch(domain:hrtyy.dev)",
+      "Bash(xcodebuild -list -project Roll.xcodeproj)",
+      "Bash(xcodebuild -scheme Roll -destination 'generic/platform=iOS' -quiet build)"
     ]
   }
 }

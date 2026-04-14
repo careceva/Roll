@@ -9,11 +9,6 @@ enum CaptureMode: String, CaseIterable {
     case portrait = "PORTRAIT"
 }
 
-// The two visible pages of modes
-private let modePages: [[CaptureMode]] = [
-    [.photo, .video],
-    [.video, .portrait],
-]
 
 // MARK: - CameraControlsView
 
@@ -41,8 +36,6 @@ struct CameraControlsView: View {
     @State private var isShowingAlbumPicker = false
     @State private var pillShakeOffset: CGFloat = 0
     @State private var isShowingCreateAlbum = false
-    @State private var modePageIndex: Int = 0
-    @State private var modeDragOffset: CGFloat = 0
 
     private var isVideoMode: Bool { captureMode == .video }
 
@@ -106,7 +99,7 @@ struct CameraControlsView: View {
                 bottomBar
                 modeToggle
                     .padding(.top, 10)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 44)
             }
             .background(Color.clear)
         }
@@ -242,7 +235,6 @@ struct CameraControlsView: View {
                     .animation(.spring(duration: 0.3, bounce: 0.15), value: captureMode)
             }
 
-            // Two tappable labels
             HStack(spacing: 0) {
                 ForEach(CaptureMode.allCases, id: \.self) { mode in
                     Button {
@@ -267,8 +259,7 @@ struct CameraControlsView: View {
             }
         }
         .frame(width: 260, height: 40)
-        .background(Color.black.opacity(0.35))
-        .clipShape(Capsule())
+        .glassEffect(in: Capsule())
     }
 
     // MARK: - Bottom Bar

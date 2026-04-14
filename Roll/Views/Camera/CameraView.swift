@@ -152,9 +152,11 @@ struct CameraView: View {
                         SpatialTapGesture()
                             .onEnded { value in
                                 let location = value.location
+                                // Clamp so focus square + exposure slider stay within the preview
+                                let clampedY = min(location.y + topBarH, topBarH + previewH - 90)
 
                                 withAnimation(.easeInOut(duration: 0.3)) {
-                                    focusPoint = CGPoint(x: location.x, y: location.y + topBarH)
+                                    focusPoint = CGPoint(x: location.x, y: clampedY)
                                 }
 
                                 showExposureSlider = true

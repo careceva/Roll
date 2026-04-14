@@ -42,7 +42,7 @@ class AlbumViewModel: ObservableObject {
             albumThumbnail = nil
             return
         }
-        PhotoLibraryService.shared.getThumbnail(for: firstAsset, size: CGSize(width: 92, height: 92)) { [weak self] img in
+        PhotoLibraryService.shared.getThumbnail(for: firstAsset, size: CGSize(width: 92, height: 92)) { [weak self] img, _ in
             DispatchQueue.main.async {
                 self?.albumThumbnail = img
             }

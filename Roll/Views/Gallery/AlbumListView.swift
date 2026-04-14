@@ -217,7 +217,7 @@ struct AlbumGridCard: View {
             return
         }
 
-        PhotoLibraryService.shared.getThumbnail(for: firstAsset, size: thumbnailRequestSize) { image in
+        PhotoLibraryService.shared.getThumbnail(for: firstAsset, size: thumbnailRequestSize) { image, _ in
             DispatchQueue.main.async {
                 if let image {
                     coverImage = image

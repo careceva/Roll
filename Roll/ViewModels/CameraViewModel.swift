@@ -102,7 +102,7 @@ class CameraViewModel: NSObject, ObservableObject {
                         }
 
                         if let asset = PhotoLibraryService.shared.getAssetByLocalIdentifier(identifier) {
-                            PhotoLibraryService.shared.getThumbnail(for: asset, size: CGSize(width: 200, height: 200)) { thumbnail in
+                            PhotoLibraryService.shared.getThumbnail(for: asset, size: CGSize(width: 200, height: 200)) { thumbnail, _ in
                                 DispatchQueue.main.async {
                                     self.lastCapturedImage = thumbnail
                                     self.lastPhotoLocalIdentifier = identifier

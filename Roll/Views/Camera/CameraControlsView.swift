@@ -125,11 +125,10 @@ struct CameraControlsView: View {
                         .font(.system(size: 10, weight: .bold))
                 }
                 // Use .primary so text auto-adapts: black on bright glass, white on dark glass
-                .foregroundStyle(.black)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .background(Color.white)
-                .clipShape(Capsule())
+                .glassEffect(in: Capsule())
                 .offset(x: pillShakeOffset, y: albumNameOffset)
                 .opacity(albumNameOpacity)
 

@@ -132,6 +132,10 @@ struct PhotoDetailView: View {
         .onAppear {
             scrollID = liveAssets[currentIndex].localIdentifier
             loadMedia()
+            preheatFullRes(around: currentIndex, previous: nil)
+        }
+        .onDisappear {
+            PhotoLibraryService.shared.resetCaching()
         }
         .onChange(of: scrollID) { _, newID in
             guard let newID,
@@ -139,8 +143,9 @@ struct PhotoDetailView: View {
                   idx != currentIndex else { return }
             currentIndex = idx
         }
-        .onChange(of: currentIndex) {
+        .onChange(of: currentIndex) { oldIndex, newIndex in
             loadMedia()
+            preheatFullRes(around: newIndex, previous: oldIndex)
             showChrome = currentAsset?.mediaType != .video
             if let asset = currentAsset, scrollID != asset.localIdentifier {
                 scrollID = asset.localIdentifier
@@ -182,6 +187,27 @@ struct PhotoDetailView: View {
         guard let asset = currentAsset, asset.mediaType != .video else { return }
         PhotoLibraryService.shared.getImage(for: asset) { img in
             DispatchQueue.main.async { image = img }
+        }
+    }
+
+    /// Pre-heat ~3 photos in each direction for instant swiping.
+    private let preheatRadius = 3
+
+    private func preheatFullRes(around index: Int, previous: Int?) {
+        let start = max(0, index - preheatRadius)
+        let end = min(liveAssets.count, index + preheatRadius + 1)
+        let nearby = Array(liveAssets[start..<end]).filter { $0.mediaType != .video }
+        PhotoLibraryService.shared.startCachingFullRes(assets: nearby)
+
+        // Stop caching assets that moved out of the window
+        if let prev = previous {
+            let oldStart = max(0, prev - preheatRadius)
+            let oldEnd = min(liveAssets.count, prev + preheatRadius + 1)
+            let oldAssets = Array(liveAssets[oldStart..<oldEnd])
+                .filter { $0.mediaType != .video && !nearby.contains($0) }
+            if !oldAssets.isEmpty {
+                PhotoLibraryService.shared.stopCachingFullRes(assets: oldAssets)
+            }
         }
     }
 
@@ -449,27 +475,44 @@ struct VideoPlayerLayer: UIViewRepresentable {
 
 struct AsyncPhotoView: View {
     let asset: PHAsset
-    @State private var image: UIImage?
+    @State private var thumbnail: UIImage?
+    @State private var fullImage: UIImage?
 
     var body: some View {
-        Group {
-            if let image = image {
-                Image(uiImage: image)
+        ZStack {
+            if let fullImage {
+                Image(uiImage: fullImage)
                     .resizable()
                     .scaledToFit()
                     .drawingGroup()
                     .pinchToZoom()
+                    .transition(.opacity)
+            } else if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFit()
+                    .drawingGroup()
             } else {
                 ProgressView().tint(.white)
             }
         }
+        .animation(.easeIn(duration: 0.15), value: fullImage != nil)
         .onAppear { loadImage() }
     }
 
-    @MainActor
     private func loadImage() {
+        // Show cached thumbnail instantly as placeholder
+        PhotoLibraryService.shared.getThumbnail(for: asset) { img, _ in
+            if self.fullImage == nil {
+                self.thumbnail = img
+            }
+        }
+
+        // Load full-res (may already be pre-heated by PHCachingImageManager)
         PhotoLibraryService.shared.getImage(for: asset) { img in
-            DispatchQueue.main.async { self.image = img }
+            DispatchQueue.main.async {
+                self.fullImage = img
+            }
         }
     }
 }

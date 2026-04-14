@@ -254,6 +254,24 @@ class PhotoLibraryService: NSObject {
         cachingManager.stopCachingImages(for: assets, targetSize: size, contentMode: .aspectFill, options: options)
     }
 
+    /// Pre-fetch full-resolution images for nearby assets in the detail pager.
+    func startCachingFullRes(assets: [PHAsset]) {
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .opportunistic
+        options.isSynchronous = false
+        cachingManager.startCachingImages(for: assets, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: options)
+    }
+
+    /// Stop pre-fetching full-resolution images.
+    func stopCachingFullRes(assets: [PHAsset]) {
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .opportunistic
+        options.isSynchronous = false
+        cachingManager.stopCachingImages(for: assets, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: options)
+    }
+
     /// Reset all cached images (e.g. when the album changes).
     func resetCaching() {
         cachingManager.stopCachingImagesForAllAssets()

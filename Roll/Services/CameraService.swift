@@ -126,10 +126,16 @@ class CameraService: NSObject, ObservableObject {
     }
 
     /// Adds audio input on the session queue without stopping the running session.
+    /// Configures audio session with .mixWithOthers so background music keeps playing.
     private nonisolated func addAudioInputDeferred() {
         // Small yield to let the session fully start before reconfiguring
         sessionQueue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self else { return }
+
+            let audioSession = AVAudioSession.sharedInstance()
+            try? audioSession.setCategory(.playAndRecord, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
+            try? audioSession.setActive(true, options: [])
+
             self.captureSession.beginConfiguration()
             if let audioDevice = AVCaptureDevice.default(for: .audio),
                let audioInput = try? AVCaptureDeviceInput(device: audioDevice),

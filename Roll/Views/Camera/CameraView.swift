@@ -28,7 +28,8 @@ struct CameraView: View {
 
     private func setupVolumeButtonObserver() {
         let audioSession = AVAudioSession.sharedInstance()
-        try? audioSession.setActive(true)
+        try? audioSession.setCategory(.playAndRecord, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
+        try? audioSession.setActive(true, options: [])
         lastVolume = audioSession.outputVolume
 
         volumeObserver = audioSession.observe(\.outputVolume, options: [.new, .old]) { session, change in
@@ -105,7 +106,7 @@ struct CameraView: View {
         if let firstAsset = assets.first {
             PhotoDetailView(assets: assets, initialAsset: firstAsset, albumName: albumName, onBackToAlbum: {
                 showLastCapture = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     showGallery = true
                 }
             })

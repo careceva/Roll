@@ -218,7 +218,7 @@ struct PhotoDetailView: View {
                 deleteCurrentAsset()
             }, onDismiss: {
                 dismiss()
-            })
+            }, onBackToAlbum: onBackToAlbum)
             .frame(width: size.width, height: size.height)
         } else {
             AsyncPhotoView(asset: asset)
@@ -238,6 +238,7 @@ struct VideoAssetView: View {
     let asset: PHAsset
     let onDelete: () -> Void
     let onDismiss: () -> Void
+    var onBackToAlbum: (() -> Void)?
 
     @State private var player: AVPlayer?
     @State private var isPlaying = false
@@ -263,7 +264,14 @@ struct VideoAssetView: View {
             // Back button — top left
             VStack {
                 HStack {
-                    Button(action: onDismiss) {
+                    Button(action: {
+                        cleanup()
+                        if let onBackToAlbum {
+                            onBackToAlbum()
+                        } else {
+                            onDismiss()
+                        }
+                    }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
